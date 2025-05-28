@@ -149,7 +149,7 @@ dotnet build --configuration Release
 
 如有問題或建議，請透過以下方式聯絡：
 - 建立 [Issue](../../issues)
-- 電子郵件: [your-email@example.com]
+- 電子郵件: [boris850418@gmail.com]
 
 ## 🙏 致謝
 
