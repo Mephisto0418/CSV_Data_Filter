@@ -92,6 +92,15 @@ namespace CSV_Data_Filter
         {
             InitializeComponent();
             this.Text = $"{PROJECT_NAME} v{PROJECT_VERSION}";
+
+            // 新增：雙擊所有欄位加入選擇欄位
+            lstAvailColumns.MouseDoubleClick += (s, e) => {
+                AddSelectedColumn(lstAvailColumns, lstSelectedColumns);
+            };
+            // 新增：雙擊選擇欄位移除
+            lstSelectedColumns.MouseDoubleClick += (s, e) => {
+                RemoveSelectedColumn(lstSelectedColumns);
+            };
         }
         #endregion
 
