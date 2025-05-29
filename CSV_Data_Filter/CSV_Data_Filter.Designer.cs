@@ -134,6 +134,7 @@
             this.lblThreads = new System.Windows.Forms.Label();
             this.nudThreads = new System.Windows.Forms.NumericUpDown();
             this.chkSkipIncompleteFiles = new System.Windows.Forms.CheckBox();
+            this.chkDebugLog = new System.Windows.Forms.CheckBox();
             this.gbTarget = new System.Windows.Forms.GroupBox();
             this.lblTargetPath = new System.Windows.Forms.Label();
             this.txtTargetPath = new System.Windows.Forms.TextBox();
