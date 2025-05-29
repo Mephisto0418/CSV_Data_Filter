@@ -68,11 +68,12 @@ namespace CSV_Data_Filter.Utils
         /// <param name="columnConfigs">欄位配置列表（包含自訂名稱）</param>
         /// <param name="filterConditions">過濾條件</param>
         /// <param name="addFileName">是否添加文件名列</param>
+        /// <param name="addDirectoryName">是否添加目錄名稱列</param>
         /// <param name="tempDir">臨時目錄</param>
         /// <param name="skipIncompleteFiles">是否跳過缺少欄位的檔案</param>
         /// <returns>臨時文件路徑，處理失敗則返回null</returns>
         public async Task<string?> ProcessCsvFileAsync(string filePath, List<ColumnConfig> columnConfigs, 
-            List<FilterCondition> filterConditions, bool addFileName, string tempDir, bool skipIncompleteFiles = false)
+            List<FilterCondition> filterConditions, bool addFileName, bool addDirectoryName, string tempDir, bool skipIncompleteFiles = false)
         {
             try
             {
@@ -137,6 +138,10 @@ namespace CSV_Data_Filter.Utils
                     {
                         csvWriter.WriteField("FileName");
                     }
+                    if (addDirectoryName)
+                    {
+                        csvWriter.WriteField("DirectoryName");
+                    }
                     await csvWriter.NextRecordAsync();
                     // 開始讀取和處理數據
                     while (await csv.ReadAsync())
@@ -152,11 +157,16 @@ namespace CSV_Data_Filter.Utils
                             if (headers.Contains(condition.ColumnName))
                             {
                                 string value = csv.GetField(condition.ColumnName) ?? "";
+                                _logAction($"[Debug] 欄位: {condition.ColumnName}, 值: {value}, 條件: {condition.Operator}, 篩選值: {condition.Value}");
                                 if (!EvaluateCondition(value, condition))
                                 {
                                     includeRecord = false;
                                     break;
                                 }
+                            }
+                            else
+                            {
+                                _logAction($"[Debug] 找不到欄位: {condition.ColumnName}");
                             }
                         }
                         if (!includeRecord) continue;
@@ -175,6 +185,11 @@ namespace CSV_Data_Filter.Utils
                         {
                             csvWriter.WriteField(Path.GetFileName(filePath));
                         }
+                        // 添加目錄名稱列
+                        if (addDirectoryName)
+                        {
+                            csvWriter.WriteField(Path.GetFileName(Path.GetDirectoryName(filePath) ?? ""));
+                        }
                         await csvWriter.NextRecordAsync();
                     }
                 }
@@ -192,28 +207,32 @@ namespace CSV_Data_Filter.Utils
         /// </summary>
         private bool EvaluateCondition(string value, FilterCondition condition)
         {
+            var val = value?.Trim() ?? "";
+            var condVal = condition.Value?.Trim() ?? "";
+            var comparison = StringComparison.OrdinalIgnoreCase;
+
             switch (condition.Operator)
             {
                 case FilterOperator.Contains:
-                    return value.Contains(condition.Value);
+                    return val.IndexOf(condVal, comparison) >= 0;
                 case FilterOperator.NotContains:
-                    return !value.Contains(condition.Value);
+                    return val.IndexOf(condVal, comparison) < 0;
                 case FilterOperator.Equals:
-                    return value.Equals(condition.Value);
+                    return val.Equals(condVal, comparison);
                 case FilterOperator.NotEquals:
-                    return !value.Equals(condition.Value);
+                    return !val.Equals(condVal, comparison);
                 case FilterOperator.StartsWith:
-                    return value.StartsWith(condition.Value);
+                    return val.StartsWith(condVal, comparison);
                 case FilterOperator.EndsWith:
-                    return value.EndsWith(condition.Value);
+                    return val.EndsWith(condVal, comparison);
                 case FilterOperator.GreaterThan:
-                    if (decimal.TryParse(value, out decimal decValue) && 
-                        decimal.TryParse(condition.Value, out decimal decCondition))
+                    if (decimal.TryParse(val, out decimal decValue) && 
+                        decimal.TryParse(condVal, out decimal decCondition))
                         return decValue > decCondition;
                     return false;
                 case FilterOperator.LessThan:
-                    if (decimal.TryParse(value, out decimal decValue2) && 
-                        decimal.TryParse(condition.Value, out decimal decCondition2))
+                    if (decimal.TryParse(val, out decimal decValue2) && 
+                        decimal.TryParse(condVal, out decimal decCondition2))
                         return decValue2 < decCondition2;
                     return false;
                 default:

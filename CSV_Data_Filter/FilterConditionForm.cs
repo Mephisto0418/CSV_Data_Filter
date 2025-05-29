@@ -181,7 +181,15 @@ namespace CSV_Data_Filter
             // 設定篩選條件
             if (cboColumns.SelectedItem != null)
             {
-                Condition.ColumnName = cboColumns.SelectedItem.ToString() ?? string.Empty;
+                // 解析顯示字串，取得括號內原始欄位名稱
+                string display = cboColumns.SelectedItem.ToString() ?? string.Empty;
+                string columnName = display;
+                int idx = display.LastIndexOf('(');
+                if (idx >= 0 && display.EndsWith(")"))
+                {
+                    columnName = display.Substring(idx + 1, display.Length - idx - 2);
+                }
+                Condition.ColumnName = columnName;
             }
             
             switch (cboOperator.SelectedIndex)

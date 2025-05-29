@@ -59,6 +59,10 @@ namespace CSV_Data_Filter
         /// </summary>
         private bool _addFileNameColumn = false;
         /// <summary>
+        /// 是否在輸出檔案最後一欄加入來源目錄名稱
+        /// </summary>
+        private bool _addDirectoryNameColumn = false;
+        /// <summary>
         /// 是否跳過缺少欄位的檔案
         /// </summary>
         private bool _skipIncompleteFiles = false;
@@ -344,6 +348,7 @@ namespace CSV_Data_Filter
                 this.Invoke((Action)(() => {
                     _customFileName = txtOutputFileName.Text.Trim();
                     _addFileNameColumn = chkAddFileName.Checked;
+                    _addDirectoryNameColumn = chkAddDirectoryName.Checked;
                     _skipIncompleteFiles = chkSkipIncompleteFiles.Checked;
                 }));
 
@@ -431,6 +436,7 @@ namespace CSV_Data_Filter
                                 columnConfigs,
                                 _filterConditions,
                                 _addFileNameColumn,
+                                _addDirectoryNameColumn,
                                 tempDir,
                                 _skipIncompleteFiles
                             );

@@ -403,4 +403,6 @@ Merged_CSV_*.csv
 
 # Temporary files
 temp_*
-*.tmp 
+*.tmp
+
+test_dir*/ 

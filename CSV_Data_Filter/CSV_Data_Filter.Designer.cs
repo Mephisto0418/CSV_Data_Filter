@@ -50,6 +50,7 @@
         private System.Windows.Forms.Button btnRemoveFilter;
         private System.Windows.Forms.GroupBox gbOptions;
         private System.Windows.Forms.CheckBox chkAddFileName;
+        private System.Windows.Forms.CheckBox chkAddDirectoryName;
         private System.Windows.Forms.Label lblThreads;
         private System.Windows.Forms.NumericUpDown nudThreads;
         private System.Windows.Forms.GroupBox gbTarget;
@@ -128,6 +129,7 @@
             this.btnRemoveFilter = new System.Windows.Forms.Button();
             this.gbOptions = new System.Windows.Forms.GroupBox();
             this.chkAddFileName = new System.Windows.Forms.CheckBox();
+            this.chkAddDirectoryName = new System.Windows.Forms.CheckBox();
             this.lblThreads = new System.Windows.Forms.Label();
             this.nudThreads = new System.Windows.Forms.NumericUpDown();
             this.chkSkipIncompleteFiles = new System.Windows.Forms.CheckBox();
@@ -563,6 +565,7 @@
             // gbOptions
             // 
             this.gbOptions.Controls.Add(this.chkAddFileName);
+            this.gbOptions.Controls.Add(this.chkAddDirectoryName);
             this.gbOptions.Controls.Add(this.lblThreads);
             this.gbOptions.Controls.Add(this.nudThreads);
             this.gbOptions.Controls.Add(this.chkSkipIncompleteFiles);
@@ -583,13 +586,23 @@
             this.chkAddFileName.Text = "在最後一欄新增檔案名稱";
             this.chkAddFileName.UseVisualStyleBackColor = true;
             // 
+            // chkAddDirectoryName
+            // 
+            this.chkAddDirectoryName.AutoSize = true;
+            this.chkAddDirectoryName.Location = new System.Drawing.Point(10, 50);
+            this.chkAddDirectoryName.Name = "chkAddDirectoryName";
+            this.chkAddDirectoryName.Size = new System.Drawing.Size(180, 23);
+            this.chkAddDirectoryName.TabIndex = 1;
+            this.chkAddDirectoryName.Text = "在最後一欄新增目錄名稱";
+            this.chkAddDirectoryName.UseVisualStyleBackColor = true;
+            // 
             // lblThreads
             // 
             this.lblThreads.AutoSize = true;
             this.lblThreads.Location = new System.Drawing.Point(200, 22);
             this.lblThreads.Name = "lblThreads";
             this.lblThreads.Size = new System.Drawing.Size(97, 19);
-            this.lblThreads.TabIndex = 1;
+            this.lblThreads.TabIndex = 2;
             this.lblThreads.Text = "處理執行緒數:";
             // 
             // nudThreads
@@ -607,7 +620,7 @@
             0});
             this.nudThreads.Name = "nudThreads";
             this.nudThreads.Size = new System.Drawing.Size(60, 23);
-            this.nudThreads.TabIndex = 2;
+            this.nudThreads.TabIndex = 3;
             this.nudThreads.Value = new decimal(new int[] {
             4,
             0,
@@ -620,7 +633,7 @@
             this.chkSkipIncompleteFiles.Location = new System.Drawing.Point(10, 50);
             this.chkSkipIncompleteFiles.Name = "chkSkipIncompleteFiles";
             this.chkSkipIncompleteFiles.Size = new System.Drawing.Size(180, 23);
-            this.chkSkipIncompleteFiles.TabIndex = 3;
+            this.chkSkipIncompleteFiles.TabIndex = 4;
             this.chkSkipIncompleteFiles.Text = "跳過不完整的檔案";
             this.chkSkipIncompleteFiles.Checked = true;
             this.chkSkipIncompleteFiles.UseVisualStyleBackColor = true;
