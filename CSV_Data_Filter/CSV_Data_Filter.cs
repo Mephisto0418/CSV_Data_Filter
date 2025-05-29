@@ -251,15 +251,16 @@ namespace CSV_Data_Filter
                 var selectedItem = selectedColumnsListBox.SelectedItem?.ToString();
                 if (selectedItem != null)
                 {
-                    // 從顯示文字中提取原始欄位名稱
-                    var match = System.Text.RegularExpressions.Regex.Match(selectedItem, @"\(([^)]+)\)$");
-                    if (match.Success)
+                    // 以最後一個 " (" 為分隔，並保留括號內容
+                    int idx = selectedItem.LastIndexOf(" (");
+                    string originalName = selectedItem;
+                    if (idx >= 0 && selectedItem.EndsWith(")"))
                     {
-                        var originalName = match.Groups[1].Value;
-                    selectedColumnsListBox.Items.RemoveAt(selectedColumnsListBox.SelectedIndex);
-                        _columnConfigs.RemoveAll(c => c.Name == originalName);
-                        AddLog(lstLog, $"已移除欄位: {originalName}");
+                        originalName = selectedItem.Substring(idx + 2, selectedItem.Length - idx - 3);
                     }
+                    selectedColumnsListBox.Items.RemoveAt(selectedColumnsListBox.SelectedIndex);
+                    _columnConfigs.RemoveAll(c => c.Name == originalName);
+                    AddLog(lstLog, $"已移除欄位: {originalName}");
                 }
             }
         }
@@ -308,7 +309,15 @@ namespace CSV_Data_Filter
                 return;
             }
 
-            using (var filterForm = new FilterConditionForm(selectedColumnsListBox.Items.Cast<string>().ToList()))
+            // 解析顯示字串，取得原始欄位名稱清單
+            var columnNames = selectedColumnsListBox.Items.Cast<string>().Select(item => {
+                int idx = item.LastIndexOf(" (");
+                if (idx >= 0 && item.EndsWith(")"))
+                    return item.Substring(idx + 2, item.Length - idx - 3);
+                return item;
+            }).ToList();
+
+            using (var filterForm = new FilterConditionForm(columnNames))
             {
                 if (filterForm.ShowDialog() == DialogResult.OK)
                 {

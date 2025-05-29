@@ -181,13 +181,13 @@ namespace CSV_Data_Filter
             // 設定篩選條件
             if (cboColumns.SelectedItem != null)
             {
-                // 解析顯示字串，取得括號內原始欄位名稱
+                // 以最後一個 " (" 為分隔，並保留括號內容
                 string display = cboColumns.SelectedItem.ToString() ?? string.Empty;
                 string columnName = display;
-                int idx = display.LastIndexOf('(');
+                int idx = display.LastIndexOf(" (");
                 if (idx >= 0 && display.EndsWith(")"))
                 {
-                    columnName = display.Substring(idx + 1, display.Length - idx - 2);
+                    columnName = display.Substring(idx + 2, display.Length - idx - 3);
                 }
                 Condition.ColumnName = columnName;
             }
