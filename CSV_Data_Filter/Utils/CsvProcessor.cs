@@ -157,11 +157,17 @@ namespace CSV_Data_Filter.Utils
                             if (headers.Contains(condition.ColumnName))
                             {
                                 string value = csv.GetField(condition.ColumnName) ?? "";
+                                // Debug log
+                                _logAction($"[Debug] 欄位: {condition.ColumnName}, 值: {value}, 條件: {condition.Operator}, 篩選值: {condition.Value}");
                                 if (!EvaluateCondition(value, condition))
                                 {
                                     includeRecord = false;
                                     break;
                                 }
+                            }
+                            else
+                            {
+                                _logAction($"[Debug] 找不到欄位: {condition.ColumnName}");
                             }
                         }
                         if (!includeRecord) continue;

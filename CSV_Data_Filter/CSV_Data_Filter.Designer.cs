@@ -64,6 +64,7 @@
         private System.Windows.Forms.Button btnExecute;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.CheckBox chkSkipIncompleteFiles;
+        private System.Windows.Forms.CheckBox chkDebugLog;
 
         /// <summary>
         ///  Clean up any resources being used.
@@ -438,6 +439,7 @@
             this.gbColumns.Controls.Add(this.btnAddColumn);
             this.gbColumns.Controls.Add(this.btnRemoveColumn);
             this.gbColumns.Controls.Add(this.btnConfigColumn);
+            this.gbColumns.Controls.Add(this.chkDebugLog);
             this.gbColumns.Location = new System.Drawing.Point(10, 450);
             this.gbColumns.Name = "gbColumns";
             this.gbColumns.Size = new System.Drawing.Size(580, 190);
@@ -520,6 +522,16 @@
             this.btnConfigColumn.Text = "欄位設置";
             this.btnConfigColumn.UseVisualStyleBackColor = true;
             this.btnConfigColumn.Click += new System.EventHandler(this.btnConfigColumn_Click);
+            // 
+            // chkDebugLog
+            // 
+            this.chkDebugLog.AutoSize = true;
+            this.chkDebugLog.Location = new System.Drawing.Point(10, 170);
+            this.chkDebugLog.Name = "chkDebugLog";
+            this.chkDebugLog.Size = new System.Drawing.Size(120, 23);
+            this.chkDebugLog.TabIndex = 8;
+            this.chkDebugLog.Text = "啟用Debug Log";
+            this.chkDebugLog.UseVisualStyleBackColor = true;
             // 
             // gbFilter
             // 

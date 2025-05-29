@@ -82,6 +82,7 @@ namespace CSV_Data_Filter
         /// 取消令牌來源
         /// </summary>
         private CancellationTokenSource? _cts;
+        private bool EnableDebugLog => chkDebugLog != null && chkDebugLog.Checked;
         #endregion
 
         #region 建構子
@@ -544,6 +545,9 @@ namespace CSV_Data_Filter
         /// </summary>
         private void SafeAddLog(ListBox logList, string message)
         {
+            // 僅在啟用DebugLog時顯示[Debug]訊息
+            if (message.StartsWith("[Debug]") && !EnableDebugLog)
+                return;
             if (logList.InvokeRequired)
             {
                 logList.Invoke(new Action(() => {
@@ -577,6 +581,8 @@ namespace CSV_Data_Filter
         // 使用 LogHelper 工具類代替此方法，但保留向後相容性
         private void AddLog(ListBox? lstLog, string message)
         {
+            if (message.StartsWith("[Debug]") && !EnableDebugLog)
+                return;
             if (lstLog != null)
             {
                 // LogHelper.AddLog 已經會添加時間戳記，所以這裡不需要重複添加
