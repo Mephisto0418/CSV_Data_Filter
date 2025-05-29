@@ -67,6 +67,10 @@ namespace CSV_Data_Filter
         /// </summary>
         private bool _skipIncompleteFiles = false;
         /// <summary>
+        /// 是否保留暫存檔案
+        /// </summary>
+        private bool _keepTempFiles = false;
+        /// <summary>
         /// 日期格式字串
         /// </summary>
         private string _dateFormat = "yyyy-MM-dd";
@@ -369,6 +373,7 @@ namespace CSV_Data_Filter
                     _addFileNameColumn = chkAddFileName.Checked;
                     _addDirectoryNameColumn = chkAddDirectoryName.Checked;
                     _skipIncompleteFiles = chkSkipIncompleteFiles.Checked;
+                    _keepTempFiles = chkKeepTempFiles.Checked;
                 }));
 
                 // 1. 建立輔助類別
@@ -521,8 +526,18 @@ namespace CSV_Data_Filter
                     });
                     
                     SafeAddLog(lstLog, $"處理完成，結果已保存至: {finalFile}");
-                    // 7. 清理臨時檔案
-                    fileHelper.CleanupTempFiles(tempFiles, tempDir);
+                    
+                    // 7. 根據設定決定是否清理臨時檔案
+                    if (_keepTempFiles)
+                    {
+                        SafeAddLog(lstLog, $"暫存檔案已保留於: {tempDir}");
+                        SafeAddLog(lstLog, $"暫存檔案數量: {tempFiles.Count}");
+                    }
+                    else
+                    {
+                        fileHelper.CleanupTempFiles(tempFiles, tempDir);
+                        SafeAddLog(lstLog, "已清理暫存檔案");
+                    }
                 }
             }
             catch (Exception ex)

@@ -64,6 +64,7 @@
         private System.Windows.Forms.Button btnExecute;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.CheckBox chkSkipIncompleteFiles;
+        private System.Windows.Forms.CheckBox chkKeepTempFiles;
         private System.Windows.Forms.CheckBox chkDebugLog;
 
         /// <summary>
@@ -134,6 +135,7 @@
             this.lblThreads = new System.Windows.Forms.Label();
             this.nudThreads = new System.Windows.Forms.NumericUpDown();
             this.chkSkipIncompleteFiles = new System.Windows.Forms.CheckBox();
+            this.chkKeepTempFiles = new System.Windows.Forms.CheckBox();
             this.chkDebugLog = new System.Windows.Forms.CheckBox();
             this.gbTarget = new System.Windows.Forms.GroupBox();
             this.lblTargetPath = new System.Windows.Forms.Label();
@@ -468,7 +470,7 @@
             // 
             // btnGetColumns
             // 
-            this.btnGetColumns.Location = new System.Drawing.Point(10, 145);
+            this.btnGetColumns.Location = new System.Drawing.Point(10, 140);
             this.btnGetColumns.Name = "btnGetColumns";
             this.btnGetColumns.Size = new System.Drawing.Size(100, 30);
             this.btnGetColumns.TabIndex = 2;
@@ -582,6 +584,7 @@
             this.gbOptions.Controls.Add(this.lblThreads);
             this.gbOptions.Controls.Add(this.nudThreads);
             this.gbOptions.Controls.Add(this.chkSkipIncompleteFiles);
+            this.gbOptions.Controls.Add(this.chkKeepTempFiles);
             this.gbOptions.Location = new System.Drawing.Point(600, 270);
             this.gbOptions.Name = "gbOptions";
             this.gbOptions.Size = new System.Drawing.Size(380, 110);
@@ -650,6 +653,16 @@
             this.chkSkipIncompleteFiles.Text = "跳過不完整的檔案";
             this.chkSkipIncompleteFiles.Checked = true;
             this.chkSkipIncompleteFiles.UseVisualStyleBackColor = true;
+            // 
+            // chkKeepTempFiles
+            // 
+            this.chkKeepTempFiles.AutoSize = true;
+            this.chkKeepTempFiles.Location = new System.Drawing.Point(10, 70);
+            this.chkKeepTempFiles.Name = "chkKeepTempFiles";
+            this.chkKeepTempFiles.Size = new System.Drawing.Size(180, 23);
+            this.chkKeepTempFiles.TabIndex = 5;
+            this.chkKeepTempFiles.Text = "保留暫存檔案";
+            this.chkKeepTempFiles.UseVisualStyleBackColor = true;
             // 
             // gbTarget
             // 
