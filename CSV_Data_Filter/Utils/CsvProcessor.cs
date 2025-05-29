@@ -83,7 +83,13 @@ namespace CSV_Data_Filter.Utils
                     HasHeaderRecord = true,
                     MissingFieldFound = null
                 };
-                string outputPath = Path.Combine(tempDir, Path.GetFileName(filePath));
+                
+                // 產生唯一的暫存檔名，避免檔名衝突
+                string baseFileName = Path.GetFileNameWithoutExtension(filePath);
+                string extension = Path.GetExtension(filePath);
+                string uniqueFileName = $"{baseFileName}_{DateTime.Now:HHmmss}_{Guid.NewGuid().ToString("N")[..8]}{extension}";
+                string outputPath = Path.Combine(tempDir, uniqueFileName);
+                
                 var outputConfig = new CsvConfiguration(CultureInfo.InvariantCulture) 
                 {
                     HasHeaderRecord = true
