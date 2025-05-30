@@ -1,6 +1,3 @@
-using System;
-using System.Windows.Forms;
-
 namespace CSV_Data_Filter.Utils
 {
     /// <summary>
@@ -17,13 +14,13 @@ namespace CSV_Data_Filter.Utils
         public static void AddLog(Form form, ListBox? lstLog, string message)
         {
             if (lstLog == null) return;
-            
+
             if (form.InvokeRequired)
             {
                 form.Invoke((Action)(() => AddLog(form, lstLog, message)));
                 return;
             }
-            
+
             lstLog.Items.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
             lstLog.SelectedIndex = lstLog.Items.Count - 1;
         }

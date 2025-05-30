@@ -8,11 +8,12 @@ namespace CSV_Data_Filter.Models
             Value = string.Empty;
             DateFormat = "yyyy-MM-dd";
         }
-        
+
         public string ColumnName { get; set; }
         public FilterOperator Operator { get; set; }
         public string Value { get; set; }
-        public string DateFormat { get; set; }        
+        public string DateFormat { get; set; }
+
         public override string ToString()
         {
             string operatorDesc = "";
@@ -33,11 +34,12 @@ namespace CSV_Data_Filter.Models
                 case FilterOperator.DateGreaterThanOrEqual: operatorDesc = "日期大於或等於"; break;
                 case FilterOperator.DateLessThanOrEqual: operatorDesc = "日期小於或等於"; break;
             }
-            
+
             return $"{ColumnName} {operatorDesc} {Value}";
         }
     }
-      public enum FilterOperator
+
+    public enum FilterOperator
     {
         Equals,
         NotEquals,

@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+using CSV_Data_Filter.Models;
 using CsvHelper;
 using CsvHelper.Configuration;
-using CSV_Data_Filter.Models;
+using System.Globalization;
 
 namespace CSV_Data_Filter.Utils
 {
@@ -46,10 +41,10 @@ namespace CSV_Data_Filter.Utils
                     HasHeaderRecord = true,
                     MissingFieldFound = null
                 };
-                
+
                 using var reader = new StreamReader(filePath);
                 using var csv = new CsvReader(reader, inputConfig);
-                
+
                 csv.Read();
                 csv.ReadHeader();
                 return csv.HeaderRecord;
@@ -72,7 +67,7 @@ namespace CSV_Data_Filter.Utils
         /// <param name="tempDir">臨時目錄</param>
         /// <param name="skipIncompleteFiles">是否跳過缺少欄位的檔案</param>
         /// <returns>臨時文件路徑，處理失敗則返回null</returns>
-        public async Task<string?> ProcessCsvFileAsync(string filePath, List<ColumnConfig> columnConfigs, 
+        public async Task<string?> ProcessCsvFileAsync(string filePath, List<ColumnConfig> columnConfigs,
             List<FilterCondition> filterConditions, bool addFileName, bool addDirectoryName, string tempDir, bool skipIncompleteFiles = false)
         {
             try
@@ -83,14 +78,14 @@ namespace CSV_Data_Filter.Utils
                     HasHeaderRecord = true,
                     MissingFieldFound = null
                 };
-                
+
                 // 產生唯一的暫存檔名，避免檔名衝突
                 string baseFileName = Path.GetFileNameWithoutExtension(filePath);
                 string extension = Path.GetExtension(filePath);
                 string uniqueFileName = $"{baseFileName}_{DateTime.Now:HHmmss}_{Guid.NewGuid().ToString("N")[..8]}{extension}";
                 string outputPath = Path.Combine(tempDir, uniqueFileName);
-                
-                var outputConfig = new CsvConfiguration(CultureInfo.InvariantCulture) 
+
+                var outputConfig = new CsvConfiguration(CultureInfo.InvariantCulture)
                 {
                     HasHeaderRecord = true
                 };
@@ -108,7 +103,7 @@ namespace CSV_Data_Filter.Utils
                         _logAction($"無法讀取文件標頭: {Path.GetFileName(filePath)}");
                         return null;
                     }
-                    
+
                     // 檢查欄位完整性
                     var missingColumns = new List<string>();
                     foreach (var config in columnConfigs)
@@ -118,12 +113,12 @@ namespace CSV_Data_Filter.Utils
                             missingColumns.Add(config.Name);
                         }
                     }
-                    
+
                     if (missingColumns.Count > 0)
                     {
                         string missingList = string.Join(", ", missingColumns);
                         _logAction($"檔案 {Path.GetFileName(filePath)} 缺少欄位: {missingList}");
-                        
+
                         if (skipIncompleteFiles)
                         {
                             _logAction($"跳過檔案 {Path.GetFileName(filePath)}（缺少必要欄位）");
@@ -134,7 +129,7 @@ namespace CSV_Data_Filter.Utils
                             _logAction($"繼續處理檔案 {Path.GetFileName(filePath)}（缺少的欄位將顯示為空值）");
                         }
                     }
-                    
+
                     // 寫入表頭（使用自訂名稱）
                     foreach (var config in columnConfigs)
                     {
@@ -181,10 +176,10 @@ namespace CSV_Data_Filter.Utils
                         foreach (var config in columnConfigs)
                         {
                             string value = headers.Contains(config.Name) ? csv.GetField(config.Name) ?? "" : "";
-                            
+
                             // 根據配置處理欄位值
                             value = ProcessColumnValue(value, config);
-                            
+
                             csvWriter.WriteField(value);
                         }
                         // 添加文件名列
@@ -222,26 +217,34 @@ namespace CSV_Data_Filter.Utils
             {
                 case FilterOperator.Contains:
                     return val.IndexOf(condVal, comparison) >= 0;
+
                 case FilterOperator.NotContains:
                     return val.IndexOf(condVal, comparison) < 0;
+
                 case FilterOperator.Equals:
                     return val.Equals(condVal, comparison);
+
                 case FilterOperator.NotEquals:
                     return !val.Equals(condVal, comparison);
+
                 case FilterOperator.StartsWith:
                     return val.StartsWith(condVal, comparison);
+
                 case FilterOperator.EndsWith:
                     return val.EndsWith(condVal, comparison);
+
                 case FilterOperator.GreaterThan:
-                    if (decimal.TryParse(val, out decimal decValue) && 
+                    if (decimal.TryParse(val, out decimal decValue) &&
                         decimal.TryParse(condVal, out decimal decCondition))
                         return decValue > decCondition;
                     return false;
+
                 case FilterOperator.LessThan:
-                    if (decimal.TryParse(val, out decimal decValue2) && 
+                    if (decimal.TryParse(val, out decimal decValue2) &&
                         decimal.TryParse(condVal, out decimal decCondition2))
                         return decValue2 < decCondition2;
                     return false;
+
                 default:
                     return true;
             }
@@ -260,8 +263,8 @@ namespace CSV_Data_Filter.Utils
                 case ProcessType.Substring:
                     if (config.StartIndex < value.Length)
                     {
-                        int length = config.SubstringLength > 0 ? 
-                            Math.Min(config.SubstringLength, value.Length - config.StartIndex) : 
+                        int length = config.SubstringLength > 0 ?
+                            Math.Min(config.SubstringLength, value.Length - config.StartIndex) :
                             value.Length - config.StartIndex;
                         return value.Substring(config.StartIndex, length);
                     }
@@ -306,18 +309,18 @@ namespace CSV_Data_Filter.Utils
         public string GenerateUniqueFileName(string targetPath, string baseFileName)
         {
             string fullPath = Path.Combine(targetPath, baseFileName);
-            
+
             if (!File.Exists(fullPath))
             {
                 return fullPath;
             }
-            
+
             // 檔案已存在，添加時間戳記
             string nameWithoutExt = Path.GetFileNameWithoutExtension(baseFileName);
             string extension = Path.GetExtension(baseFileName);
             string timestamp = DateTime.Now.ToString("_yyyyMMdd_HHmmss");
             string newFileName = $"{nameWithoutExt}{timestamp}{extension}";
-            
+
             return Path.Combine(targetPath, newFileName);
         }
 
@@ -328,7 +331,7 @@ namespace CSV_Data_Filter.Utils
         {
             try
             {
-                var config = new CsvConfiguration(CultureInfo.InvariantCulture) 
+                var config = new CsvConfiguration(CultureInfo.InvariantCulture)
                 {
                     HasHeaderRecord = true
                 };
@@ -346,11 +349,12 @@ namespace CSV_Data_Filter.Utils
 
                         using var reader = new StreamReader(tempFile);
                         using var csvReader = new CsvReader(reader, config);
-                        
+
                         // 讀取表頭
                         await csvReader.ReadAsync();
                         csvReader.ReadHeader();
-
+                        if (csvReader.HeaderRecord is null)
+                            continue;
                         // 寫入第一個文件的表頭
                         if (isFirstFile)
                         {
@@ -369,7 +373,7 @@ namespace CSV_Data_Filter.Utils
                             {
                                 break;
                             }
-
+                            
                             foreach (var header in csvReader.HeaderRecord)
                             {
                                 csvWriter.WriteField(csvReader.GetField(header));
@@ -395,7 +399,7 @@ namespace CSV_Data_Filter.Utils
         /// <param name="outputPath">輸出文件路徑</param>
         /// <param name="progressCallback">進度回調函數</param>
         /// <returns>合併後的文件路徑</returns>
-        public async Task<string> MergeCsvFilesOptimizedAsync(List<string> tempFiles, string outputPath, 
+        public async Task<string> MergeCsvFilesOptimizedAsync(List<string> tempFiles, string outputPath,
             Action<int, int>? progressCallback = null)
         {
             if (tempFiles.Count == 0)
@@ -413,7 +417,7 @@ namespace CSV_Data_Filter.Utils
                         break;
 
                     using var inputReader = new StreamReader(tempFile);
-                    
+
                     if (isFirstFile)
                     {
                         // 第一個文件：複製包含標頭的所有內容
@@ -424,20 +428,20 @@ namespace CSV_Data_Filter.Utils
                     {
                         // 其他文件：跳過標頭行，只複製資料行
                         await inputReader.ReadLineAsync(); // 跳過標頭行
-                        
+
                         string? line;
                         while ((line = await inputReader.ReadLineAsync()) != null)
                         {
                             if (_cancellationToken.IsCancellationRequested)
                                 break;
-                                
+
                             await outputWriter.WriteLineAsync(line);
                         }
                     }
 
                     processedCount++;
                     progressCallback?.Invoke(processedCount, tempFiles.Count);
-                    
+
                     _logAction($"合併進度: {processedCount}/{tempFiles.Count}");
                 }
 
