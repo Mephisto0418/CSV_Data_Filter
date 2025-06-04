@@ -1,5 +1,3 @@
-using System;
-
 namespace CSV_Data_Filter.Models
 {
     public class ColumnConfig
@@ -13,35 +11,38 @@ namespace CSV_Data_Filter.Models
             ReplaceText = string.Empty;
             RegexPattern = string.Empty;
         }
-        
+
         /// <summary>
         /// 原始欄位名稱
         /// </summary>
         public string Name { get; set; }
-        
+
         /// <summary>
         /// 用戶自訂的欄位名稱（用於輸出檔案）
         /// </summary>
         public string CustomName { get; set; }
-        
+
         public ProcessType ProcessType { get; set; }
-        
+
         // Substring 參數
         public int StartIndex { get; set; } = 0;
+
         public int SubstringLength { get; set; } = 0;
-        
+
         // Math 參數
         public decimal MultiplyBy { get; set; } = 1;
+
         public decimal AddValue { get; set; } = 0;
-        
+
         // Replace 參數
         public string? FindText { get; set; }
+
         public string? ReplaceText { get; set; }
-        
+
         // Regex 參數
         public string? RegexPattern { get; set; }
     }
-    
+
     public enum ProcessType
     {
         None,

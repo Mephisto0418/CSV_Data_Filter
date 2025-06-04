@@ -1,11 +1,6 @@
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace CSV_Data_Filter.Utils
 {
@@ -55,46 +50,46 @@ namespace CSV_Data_Filter.Utils
             var dirs = new Stack<string>();
             dirs.Push(rootPath);
             int processedDirs = 0;
-            
+
             while (dirs.Count > 0)
             {
                 if (_cancellationToken.IsCancellationRequested) yield break;
-                
+
                 var current = dirs.Pop();
                 processedDirs++;
-                
+
                 // 每處理1000個目錄報告一次進度（減少頻繁輸出）
                 if (processedDirs % 1000 == 0)
                 {
                     _logAction($"已掃描 {processedDirs} 個目錄，待處理: {dirs.Count}");
                 }
-                
+
                 var dirName = Path.GetFileName(current);
                 // 目錄篩選
                 if (!string.IsNullOrEmpty(folderInclude) && !dirName.Contains(folderInclude)) continue;
                 if (!string.IsNullOrEmpty(folderExclude) && dirName.Contains(folderExclude)) continue;
                 if (useFolderDateFilter && !CompareDates(dirName, folderDateFormat, folderDateValue, folderDateOp)) continue;
-                
+
                 List<string> filteredFiles = new List<string>();
-                IEnumerable<string> files = null;
+                IEnumerable<string>? files = null;
                 try
                 {
                     files = Directory.EnumerateFiles(current, "*.csv", SearchOption.TopDirectoryOnly);
                 }
-                catch (Exception ex) 
-                { 
+                catch (Exception)
+                {
                     // 只記錄重要的存取錯誤，避免過多log
                     if (processedDirs % 5000 == 0)
                         _logAction($"無法存取部分目錄，繼續搜尋中...");
-                    files = null; 
+                    files = null;
                 }
-                
+
                 if (files != null)
                 {
                     foreach (var file in files)
                     {
                         if (_cancellationToken.IsCancellationRequested) yield break;
-                        
+
                         var fileName = Path.GetFileName(file);
                         // 檔案篩選
                         if (!string.IsNullOrEmpty(fileInclude) && !fileName.Contains(fileInclude)) continue;
@@ -103,13 +98,13 @@ namespace CSV_Data_Filter.Utils
                         filteredFiles.Add(file);
                     }
                 }
-                
+
                 // 若為網路目錄且有符合條件檔案，robocopy整個目錄到本地暫存
                 if (current.StartsWith("\\\\") && filteredFiles.Count > 0)
                 {
                     _logAction($"發現網路目錄有符合條件檔案，正在複製: {current}");
                     string localDir = BulkCopyNetworkFolder(current, tempDir);
-                    IEnumerable<string> localFiles = null;
+                    IEnumerable<string>? localFiles = null;
                     try
                     {
                         localFiles = Directory.EnumerateFiles(localDir, "*.csv", SearchOption.TopDirectoryOnly)
@@ -124,23 +119,23 @@ namespace CSV_Data_Filter.Utils
                     foreach (var f in filteredFiles)
                         yield return f;
                 }
-                
+
                 // 添加子目錄到處理佇列
-                IEnumerable<string> subDirs = null;
+                IEnumerable<string>? subDirs = null;
                 try
                 {
                     subDirs = Directory.EnumerateDirectories(current, "*", SearchOption.TopDirectoryOnly);
                 }
-                catch (Exception ex) 
-                { 
+                catch (Exception)
+                {
                     // 減少錯誤log的頻率
-                    subDirs = null; 
+                    subDirs = null;
                 }
-                
+
                 foreach (var dir in subDirs ?? Array.Empty<string>())
                     dirs.Push(dir);
             }
-            
+
             _logAction($"目錄掃描完成，總共處理了 {processedDirs} 個目錄");
         }
 
@@ -163,7 +158,8 @@ namespace CSV_Data_Filter.Utils
                 };
                 using (var proc = Process.Start(psi))
                 {
-                    proc.WaitForExit();
+                    if (proc is not null)
+                        proc.WaitForExit();
                 }
                 return localFolder;
             }
@@ -198,16 +194,16 @@ namespace CSV_Data_Filter.Utils
             var results = new ConcurrentBag<string>(); // 執行緒安全
             int totalPaths = sourcePaths.Count;
             int processedPaths = 0;
-            
+
             _logAction($"開始搜尋 {totalPaths} 個來源路徑...");
-            
+
             Parallel.ForEach(sourcePaths, sourcePath =>
             {
                 if (_cancellationToken.IsCancellationRequested) return;
-                
+
                 _logAction($"正在搜尋路徑: {sourcePath}");
                 int fileCount = 0;
-                
+
                 foreach (var file in EnumerateCsvFiles(
                     sourcePath, folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
                     fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue, tempDir))
@@ -215,18 +211,18 @@ namespace CSV_Data_Filter.Utils
                     if (_cancellationToken.IsCancellationRequested) return;
                     results.Add(file);
                     fileCount++;
-                    
+
                     // 每找到100個檔案報告一次進度（減少頻繁輸出）
                     if (fileCount % 100 == 0)
                     {
                         _logAction($"在 {Path.GetFileName(sourcePath)} 中已找到 {fileCount} 個符合條件的檔案");
                     }
                 }
-                
+
                 Interlocked.Increment(ref processedPaths);
                 _logAction($"完成搜尋路徑: {Path.GetFileName(sourcePath)} (找到 {fileCount} 個檔案) - 進度: {processedPaths}/{totalPaths}");
             });
-            
+
             var finalResults = results.ToList();
             _logAction($"搜尋完成，總共找到 {finalResults.Count} 個符合條件的CSV檔案");
             return finalResults;
@@ -261,12 +257,12 @@ namespace CSV_Data_Filter.Utils
         /// 獲取符合條件的子目錄
         /// </summary>
         private List<string> GetFilteredSubdirectories(
-            string sourcePath, 
-            string folderInclude, 
-            string folderExclude, 
+            string sourcePath,
+            string folderInclude,
+            string folderExclude,
             bool useFolderDateFilter,
-            string folderDateFormat, 
-            string folderDateOp, 
+            string folderDateFormat,
+            string folderDateOp,
             DateTime folderDateValue)
         {
             var results = new List<string>();
@@ -274,10 +270,10 @@ namespace CSV_Data_Filter.Utils
             {
                 // 添加根目錄
                 results.Add(sourcePath);
-                
+
                 // 遍歷所有子目錄
                 var allDirs = Directory.GetDirectories(sourcePath, "*", SearchOption.AllDirectories);
-                
+
                 foreach (var dir in allDirs)
                 {
                     if (_cancellationToken.IsCancellationRequested)
@@ -286,19 +282,19 @@ namespace CSV_Data_Filter.Utils
                     }
 
                     var dirName = new DirectoryInfo(dir).Name;
-                    
+
                     // 檢查包含條件
                     if (!string.IsNullOrEmpty(folderInclude) && !dirName.Contains(folderInclude))
                     {
                         continue;
                     }
-                    
+
                     // 檢查排除條件
                     if (!string.IsNullOrEmpty(folderExclude) && dirName.Contains(folderExclude))
                     {
                         continue;
                     }
-                    
+
                     // 檢查日期條件
                     if (useFolderDateFilter)
                     {
@@ -307,7 +303,7 @@ namespace CSV_Data_Filter.Utils
                             continue;
                         }
                     }
-                    
+
                     results.Add(dir);
                 }
             }
@@ -315,7 +311,7 @@ namespace CSV_Data_Filter.Utils
             {
                 _logAction($"過濾目錄時出錯: {ex.Message}");
             }
-            
+
             return results;
         }
 
@@ -323,20 +319,20 @@ namespace CSV_Data_Filter.Utils
         /// 獲取符合條件的CSV文件
         /// </summary>
         private List<string> GetFilteredCsvFiles(
-            string directory, 
-            string fileInclude, 
-            string fileExclude, 
+            string directory,
+            string fileInclude,
+            string fileExclude,
             bool useFileDateFilter,
-            string fileDateFormat, 
-            string fileDateOp, 
+            string fileDateFormat,
+            string fileDateOp,
             DateTime fileDateValue)
         {
             var results = new List<string>();
-            
+
             try
             {
                 var files = Directory.GetFiles(directory, "*.csv", SearchOption.TopDirectoryOnly);
-                
+
                 foreach (var file in files)
                 {
                     if (_cancellationToken.IsCancellationRequested)
@@ -345,19 +341,19 @@ namespace CSV_Data_Filter.Utils
                     }
 
                     var fileName = Path.GetFileName(file);
-                    
+
                     // 檢查包含條件
                     if (!string.IsNullOrEmpty(fileInclude) && !fileName.Contains(fileInclude))
                     {
                         continue;
                     }
-                    
+
                     // 檢查排除條件
                     if (!string.IsNullOrEmpty(fileExclude) && fileName.Contains(fileExclude))
                     {
                         continue;
                     }
-                    
+
                     // 檢查日期條件
                     if (useFileDateFilter)
                     {
@@ -366,7 +362,7 @@ namespace CSV_Data_Filter.Utils
                             continue;
                         }
                     }
-                    
+
                     results.Add(file);
                 }
             }
@@ -374,7 +370,7 @@ namespace CSV_Data_Filter.Utils
             {
                 _logAction($"過濾文件時出錯: {ex.Message}");
             }
-            
+
             return results;
         }
 
@@ -396,39 +392,44 @@ namespace CSV_Data_Filter.Utils
                     return false;
 
                 var dateStr = match.Value;
-                
+
                 // 嘗試解析日期字符串
-                var formats = new[] 
-                { 
-                    "yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd", "yyyy年MM月dd日", 
+                var formats = new[]
+                {
+                    "yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd", "yyyy年MM月dd日",
                     "MM-dd-yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "dd/MM/yyyy",
-                    "yyyyMMdd", format 
+                    "yyyyMMdd", format
                 };
-                
+
                 DateTime fileDate = DateTime.MinValue;
                 foreach (var fmt in formats)
                 {
-                    if (DateTime.TryParseExact(dateStr, fmt, System.Globalization.CultureInfo.InvariantCulture, 
+                    if (DateTime.TryParseExact(dateStr, fmt, System.Globalization.CultureInfo.InvariantCulture,
                                               System.Globalization.DateTimeStyles.None, out fileDate))
                         break;
                 }
-                
+
                 if (fileDate == DateTime.MinValue)
                     return false;
-                
+
                 // 根據指定的運算符進行比較
                 switch (compareOperator)
                 {
                     case ">":
                         return fileDate > compareDate;
+
                     case ">=":
                         return fileDate >= compareDate;
+
                     case "<":
                         return fileDate < compareDate;
+
                     case "<=":
                         return fileDate <= compareDate;
+
                     case "=":
                         return fileDate.Date == compareDate.Date;
+
                     default:
                         return false;
                 }
@@ -458,7 +459,7 @@ namespace CSV_Data_Filter.Utils
             {
                 try { File.Delete(tempFile); } catch { }
             }
-            
+
             try { Directory.Delete(tempDir, true); } catch { }
         }
     }

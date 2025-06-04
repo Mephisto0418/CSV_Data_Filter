@@ -1,15 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using CsvHelper;
-using CsvHelper.Configuration;
 using CSV_Data_Filter.Models;
 using CSV_Data_Filter.Utils;
+using CsvHelper;
+using CsvHelper.Configuration;
+using System.Globalization;
 
 namespace CSV_Data_Filter
 {
@@ -19,77 +12,97 @@ namespace CSV_Data_Filter
     public partial class CSV_Data_Filter : Form
     {
         #region 專案資訊
+
         /// <summary>
         /// 專案名稱
         /// </summary>
         public const string PROJECT_NAME = "CSV Data Filter";
+
         /// <summary>
         /// 專案版本
         /// </summary>
         public const string PROJECT_VERSION = "1.0.0";
+
         /// <summary>
         /// 專案描述
         /// </summary>
         public const string PROJECT_DESCRIPTION = "CSV資料過濾與合併工具";
-        #endregion
+
+        #endregion 專案資訊
 
         #region 私有欄位
+
         /// <summary>
         /// 使用者選擇的來源資料夾路徑清單
         /// </summary>
         private List<string> _sourcePaths = new List<string>();
+
         /// <summary>
         /// 目標輸出資料夾
         /// </summary>
         private string _targetPath = "";
+
         /// <summary>
         /// 自訂輸出檔案名稱
         /// </summary>
         private string _customFileName = "";
+
         /// <summary>
         /// 欄位處理設定清單，對應每個選取欄位的處理方式
         /// </summary>
         private List<Models.ColumnConfig> _columnConfigs = new List<Models.ColumnConfig>();
+
         /// <summary>
         /// 篩選條件清單
         /// </summary>
         private List<Models.FilterCondition> _filterConditions = new List<Models.FilterCondition>();
+
         /// <summary>
         /// 是否在輸出檔案最後一欄加入來源檔案名稱
         /// </summary>
         private bool _addFileNameColumn = false;
+
         /// <summary>
         /// 是否在輸出檔案最後一欄加入來源目錄名稱
         /// </summary>
         private bool _addDirectoryNameColumn = false;
+
         /// <summary>
         /// 是否跳過缺少欄位的檔案
         /// </summary>
         private bool _skipIncompleteFiles = false;
+
         /// <summary>
         /// 是否保留暫存檔案
         /// </summary>
         private bool _keepTempFiles = false;
+
         /// <summary>
         /// 日期格式字串
         /// </summary>
         private string _dateFormat = "yyyy-MM-dd";
+
         /// <summary>
         /// 總檔案數
         /// </summary>
         private int _totalFiles = 0;
+
         /// <summary>
         /// 已處理檔案數
         /// </summary>
         private int _processedFiles = 0;
+
         /// <summary>
         /// 取消令牌來源
         /// </summary>
         private CancellationTokenSource? _cts;
+
         private bool EnableDebugLog => chkDebugLog != null && chkDebugLog.Checked;
-        #endregion
+
+        #endregion 私有欄位
 
         #region 建構子
+
         /// <summary>
         /// 建構子，初始化UI元件
         /// </summary>
@@ -99,17 +112,21 @@ namespace CSV_Data_Filter
             this.Text = $"{PROJECT_NAME} v{PROJECT_VERSION}";
 
             // 新增：雙擊所有欄位加入選擇欄位
-            lstAvailColumns.MouseDoubleClick += (s, e) => {
+            lstAvailColumns.MouseDoubleClick += (s, e) =>
+            {
                 AddSelectedColumn(lstAvailColumns, lstSelectedColumns);
             };
             // 新增：雙擊選擇欄位移除
-            lstSelectedColumns.MouseDoubleClick += (s, e) => {
+            lstSelectedColumns.MouseDoubleClick += (s, e) =>
+            {
                 RemoveSelectedColumn(lstSelectedColumns);
             };
         }
-        #endregion
+
+        #endregion 建構子
 
         #region 私有方法
+
         private void AddSourcePath()
         {
             using (var dialog = new FolderBrowserDialog())
@@ -159,7 +176,7 @@ namespace CSV_Data_Filter
             }
 
             AddLog(lstLog, "正在搜尋 CSV 檔案以獲取欄位...");
-            
+
             // 只要找到第一個符合條件的CSV檔案就停止
             string? firstCsvFile = null;
             foreach (var path in _sourcePaths.Where(p => !string.IsNullOrEmpty(p)))
@@ -241,7 +258,7 @@ namespace CSV_Data_Filter
                 {
                     var config = new Models.ColumnConfig(columnName);
                     _columnConfigs.Add(config);
-                    
+
                     // 顯示自訂名稱（初始時與原始名稱相同）
                     selectedColumnsListBox.Items.Add($"{config.CustomName} ({config.Name})");
                     AddLog(lstLog, $"已新增欄位: {columnName}");
@@ -283,15 +300,15 @@ namespace CSV_Data_Filter
                     {
                         var originalName = match.Groups[1].Value;
                         var config = _columnConfigs.Find(c => c.Name == originalName);
-                    
-                    if (config != null)
-                    {
-                        using (var configForm = new ColumnConfigForm(config))
+
+                        if (config != null)
                         {
-                            if (configForm.ShowDialog() == DialogResult.OK)
+                            using (var configForm = new ColumnConfigForm(config))
                             {
+                                if (configForm.ShowDialog() == DialogResult.OK)
+                                {
                                     // 更新ListBox中的顯示文字
-                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] = 
+                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] =
                                         $"{config.CustomName} ({config.Name})";
                                     AddLog(lstLog, $"已設定欄位 {originalName} 的處理方式");
                                 }
@@ -315,7 +332,8 @@ namespace CSV_Data_Filter
             }
 
             // 解析顯示字串，取得原始欄位名稱清單
-            var columnNames = selectedColumnsListBox.Items.Cast<string>().Select(item => {
+            var columnNames = selectedColumnsListBox.Items.Cast<string>().Select(item =>
+            {
                 int idx = item.LastIndexOf(" (");
                 if (idx >= 0 && item.EndsWith(")"))
                     return item.Substring(idx + 2, item.Length - idx - 3);
@@ -329,7 +347,7 @@ namespace CSV_Data_Filter
                     var condition = filterForm.Condition;
                     _filterConditions.Add(condition);
                     filtersListBox.Items.Add(condition.ToString());
-                    
+
                     AddLog(lstLog, $"已新增篩選條件: {condition}");
                 }
             }
@@ -342,12 +360,12 @@ namespace CSV_Data_Filter
                 var conditionStr = filtersListBox.SelectedItem?.ToString() ?? "";
                 var index = filtersListBox.SelectedIndex;
                 filtersListBox.Items.RemoveAt(index);
-                
+
                 if (index < _filterConditions.Count)
                 {
                     _filterConditions.RemoveAt(index);
                 }
-                
+
                 AddLog(lstLog, $"已移除篩選條件: {conditionStr}");
             }
         }
@@ -361,14 +379,21 @@ namespace CSV_Data_Filter
             {
                 SafeAddLog(lstLog, "已有任務執行中");
                 return;
-            }
-            _cts = new CancellationTokenSource();
+            }            _cts = new CancellationTokenSource();
             try
             {
+                // 啟用取消按鈕
+                this.Invoke((Action)(() =>
+                {
+                    btnCancel.Enabled = true;
+                    btnExecute.Enabled = false;
+                }));
+
                 SafeAddLog(lstLog, "開始處理...");
 
                 // 讀取自訂檔案名稱
-                this.Invoke((Action)(() => {
+                this.Invoke((Action)(() =>
+                {
                     _customFileName = txtOutputFileName.Text.Trim();
                     _addFileNameColumn = chkAddFileName.Checked;
                     _addDirectoryNameColumn = chkAddDirectoryName.Checked;
@@ -401,10 +426,10 @@ namespace CSV_Data_Filter
                     dtpFileDateValue.Value,
                     tempDir
                 );
-                
+
                 _totalFiles = matchingFiles.Count;
                 _processedFiles = 0;
-                
+
                 if (_totalFiles == 0)
                 {
                     SafeAddLog(lstLog, "找不到符合條件的檔案");
@@ -412,18 +437,20 @@ namespace CSV_Data_Filter
                     btnCancel.Enabled = false;
                     return;
                 }
-                
+
                 SafeAddLog(lstLog, $"找到 {_totalFiles} 個符合條件的 CSV 檔案");
-                
+
                 // 設置進度條範圍
-                this.Invoke((Action)(() => {
-                progressBar.Maximum = _totalFiles;
-                progressBar.Value = 0;
+                this.Invoke((Action)(() =>
+                {
+                    progressBar.Maximum = _totalFiles;
+                    progressBar.Value = 0;
                 }));
 
                 // 4. 處理欄位選擇，若未選擇則自動選擇所有欄位
                 var columnConfigs = new List<ColumnConfig>();
-                this.Invoke((Action)(() => {
+                this.Invoke((Action)(() =>
+                {
                     // 使用已配置的欄位配置
                     if (_columnConfigs.Count > 0)
                     {
@@ -450,7 +477,8 @@ namespace CSV_Data_Filter
                 foreach (var file in matchingFiles)
                 {
                     await semaphore.WaitAsync();
-                    tasks.Add(Task.Run(async () => {
+                    tasks.Add(Task.Run(async () =>
+                    {
                         try
                         {
                             if (_cts.Token.IsCancellationRequested)
@@ -474,7 +502,8 @@ namespace CSV_Data_Filter
                             lock (this)
                             {
                                 _processedFiles++;
-                                this.Invoke((Action)(() => {
+                                this.Invoke((Action)(() =>
+                                {
                                     progressBar.Value = _processedFiles;
                                     SafeAddLog(lstLog, $"已處理: {Path.GetFileName(file)} ({_processedFiles}/{_totalFiles})");
                                 }));
@@ -482,7 +511,8 @@ namespace CSV_Data_Filter
                         }
                         catch (Exception ex)
                         {
-                            this.Invoke((Action)(() => {
+                            this.Invoke((Action)(() =>
+                            {
                                 SafeAddLog(lstLog, $"處理檔案 {Path.GetFileName(file)} 時出錯: {ex.Message}");
                             }));
                         }
@@ -493,7 +523,7 @@ namespace CSV_Data_Filter
                     }, _cts.Token));
                 }
                 await Task.WhenAll(tasks);
-                
+
                 if (_cts.Token.IsCancellationRequested)
                 {
                     SafeAddLog(lstLog, "操作已取消");
@@ -502,31 +532,34 @@ namespace CSV_Data_Filter
                 {
                     // 6. 使用優化的合併方法（大幅提升效率）並檢查檔案名稱重複
                     SafeAddLog(lstLog, "正在合併處理結果...");
-                    
+
                     // 使用自訂檔案名稱或預設名稱
                     string baseFileName;
                     if (!string.IsNullOrWhiteSpace(_customFileName))
                     {
                         // 確保檔案名稱有.csv副檔名
-                        baseFileName = _customFileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) 
-                            ? _customFileName 
+                        baseFileName = _customFileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+                            ? _customFileName
                             : $"{_customFileName}.csv";
                     }
                     else
                     {
                         baseFileName = $"Merged_CSV_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
                     }
-                    
+
+                    if (_targetPath == "") _targetPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                     string finalFile = csvProcessor.GenerateUniqueFileName(_targetPath, baseFileName);
-                    
-                    await csvProcessor.MergeCsvFilesOptimizedAsync(tempFiles, finalFile, (processed, total) => {
-                        this.Invoke((Action)(() => {
+
+                    await csvProcessor.MergeCsvFilesOptimizedAsync(tempFiles, finalFile, (processed, total) =>
+                    {
+                        this.Invoke((Action)(() =>
+                        {
                             progressBar.Value = Math.Min(progressBar.Maximum, processed);
                         }));
                     });
-                    
+
                     SafeAddLog(lstLog, $"處理完成，結果已保存至: {finalFile}");
-                    
+
                     // 7. 根據設定決定是否清理臨時檔案
                     if (_keepTempFiles)
                     {
@@ -548,9 +581,10 @@ namespace CSV_Data_Filter
             finally
             {
                 _cts = null;
-                this.Invoke((Action)(() => {
-                btnExecute.Enabled = true;
-                btnCancel.Enabled = false;
+                this.Invoke((Action)(() =>
+                {
+                    btnExecute.Enabled = true;
+                    btnCancel.Enabled = false;
                 }));
             }
         }
@@ -565,7 +599,8 @@ namespace CSV_Data_Filter
                 return;
             if (logList.InvokeRequired)
             {
-                logList.Invoke(new Action(() => {
+                logList.Invoke(new Action(() =>
+                {
                     string timestampedMessage = $"[{DateTime.Now:HH:mm:ss}] {message}";
                     logList.Items.Add(timestampedMessage);
                     // 自動滾動到最新訊息並取消選取
@@ -607,9 +642,11 @@ namespace CSV_Data_Filter
                 lstLog.ClearSelected();
             }
         }
-        #endregion
+
+        #endregion 私有方法
 
         #region 事件處理方法
+
         // 按鈕事件處理方法
         private void btnAddPath_Click(object sender, EventArgs e)
         {
@@ -676,6 +713,7 @@ namespace CSV_Data_Filter
                 e.Handled = true;
             }
         }
-        #endregion
+
+        #endregion 事件處理方法
     }
 }
