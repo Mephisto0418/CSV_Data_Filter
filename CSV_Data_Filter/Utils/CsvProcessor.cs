@@ -76,19 +76,33 @@ namespace CSV_Data_Filter.Utils
                 var inputConfig = new CsvConfiguration(CultureInfo.InvariantCulture)
                 {
                     HasHeaderRecord = true,
-                    MissingFieldFound = null
+                    MissingFieldFound = null,
+                    // 添加緩衝設定，避免一次讀取過多資料
+                    CacheFields = true,
+                    ReadingExceptionOccurred = args => false // 忽略讀取錯誤，繼續處理下一行
                 };
-
+                
                 // 產生唯一的暫存檔名，避免檔名衝突
                 string baseFileName = Path.GetFileNameWithoutExtension(filePath);
                 string extension = Path.GetExtension(filePath);
                 string uniqueFileName = $"{baseFileName}_{DateTime.Now:HHmmss}_{Guid.NewGuid().ToString("N")[..8]}{extension}";
                 string outputPath = Path.Combine(tempDir, uniqueFileName);
 
+                // 檢查檔案標題
+                _logAction($"檢查檔案標題: {Path.GetFileName(filePath)}");
+                int headerLine = await FindHeaderLineAsync(filePath);
+                if (headerLine < 0)
+                {
+                    _logAction($"無法找到標題行: {Path.GetFileName(filePath)}");
+                    return null;
+                }
+                _logAction($"在第 {headerLine + 1} 行找到標題行");
+
                 var outputConfig = new CsvConfiguration(CultureInfo.InvariantCulture)
                 {
                     HasHeaderRecord = true
                 };
+                
                 using (var reader = new StreamReader(filePath))
                 using (var csv = new CsvReader(reader, inputConfig))
                 using (var writer = new StreamWriter(outputPath))
@@ -144,9 +158,14 @@ namespace CSV_Data_Filter.Utils
                         csvWriter.WriteField("DirectoryName");
                     }
                     await csvWriter.NextRecordAsync();
+                    
+                    // 記錄處理的行數
+                    int processedRows = 0;
+                    
                     // 開始讀取和處理數據
                     while (await csv.ReadAsync())
                     {
+                        processedRows++;
                         if (_cancellationToken.IsCancellationRequested)
                         {
                             return null;
@@ -158,17 +177,11 @@ namespace CSV_Data_Filter.Utils
                             if (headers.Contains(condition.ColumnName))
                             {
                                 string value = csv.GetField(condition.ColumnName) ?? "";
-                                // Debug log
-                                _logAction($"[Debug] 欄位: {condition.ColumnName}, 值: {value}, 條件: {condition.Operator}, 篩選值: {condition.Value}");
                                 if (!EvaluateCondition(value, condition))
                                 {
                                     includeRecord = false;
                                     break;
                                 }
-                            }
-                            else
-                            {
-                                _logAction($"[Debug] 找不到欄位: {condition.ColumnName}");
                             }
                         }
                         if (!includeRecord) continue;
@@ -194,13 +207,47 @@ namespace CSV_Data_Filter.Utils
                         }
                         await csvWriter.NextRecordAsync();
                     }
+                    
+                    _logAction($"完成處理檔案: {Path.GetFileName(filePath)} - 共 {processedRows} 行");
                 }
                 return outputPath;
             }
             catch (Exception ex)
             {
-                _logAction($"處理檔案 {Path.GetFileName(filePath)} 時出錯: {ex.Message}");
+                _logAction($"處理檔案時出錯: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// 尋找CSV檔案中的標題行
+        /// </summary>
+        private async Task<int> FindHeaderLineAsync(string filePath)
+        {
+            try
+            {
+                using var reader = new StreamReader(filePath);
+                int lineNum = 0;
+                string? line;
+                
+                // 檢查前10行找出標題行
+                while (lineNum < 10 && (line = await reader.ReadLineAsync()) != null)
+                {
+                    // 簡單的標題行檢測邏輯：含有逗號且不是純數字
+                    if (line.Contains(',') && !line.Split(',').All(item => decimal.TryParse(item.Trim(), out _)))
+                    {
+                        return lineNum;
+                    }
+                    lineNum++;
+                }
+                
+                // 如果找不到明確的標題行，預設使用第一行
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                _logAction($"檢查標題行時出錯: {ex.Message}");
+                return -1;
             }
         }
 

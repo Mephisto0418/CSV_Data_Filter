@@ -50,10 +50,14 @@ namespace CSV_Data_Filter.Utils
             var dirs = new Stack<string>();
             dirs.Push(rootPath);
             int processedDirs = 0;
-
+            int processedBatch = 0;
+            // 使用較小的批次大小以避免記憶體問題
+            const int batchSize = 500;
+            
             while (dirs.Count > 0)
             {
-                if (_cancellationToken.IsCancellationRequested) yield break;
+                if (_cancellationToken.IsCancellationRequested)
+                    break;
 
                 var current = dirs.Pop();
                 processedDirs++;
@@ -62,6 +66,13 @@ namespace CSV_Data_Filter.Utils
                 if (processedDirs % 1000 == 0)
                 {
                     _logAction($"已掃描 {processedDirs} 個目錄，待處理: {dirs.Count}");
+                    // 每批次處理結束後，強制記憶體回收
+                    processedBatch++;
+                    if (processedBatch % 10 == 0)
+                    {
+                        GC.Collect(2, GCCollectionMode.Forced);
+                        GC.WaitForPendingFinalizers();
+                    }
                 }
 
                 var dirName = Path.GetFileName(current);
@@ -70,17 +81,17 @@ namespace CSV_Data_Filter.Utils
                 if (!string.IsNullOrEmpty(folderExclude) && dirName.Contains(folderExclude)) continue;
                 if (useFolderDateFilter && !CompareDates(dirName, folderDateFormat, folderDateValue, folderDateOp)) continue;
 
-                List<string> filteredFiles = new List<string>();
+                // 使用局部變數避免大量資料佔用記憶體
+                List<string> tempFiles = new();
                 IEnumerable<string>? files = null;
                 try
                 {
+                    // 使用EnumerateFiles而非GetFiles以提高效能
                     files = Directory.EnumerateFiles(current, "*.csv", SearchOption.TopDirectoryOnly);
                 }
                 catch (Exception)
                 {
-                    // 只記錄重要的存取錯誤，避免過多log
-                    if (processedDirs % 5000 == 0)
-                        _logAction($"無法存取部分目錄，繼續搜尋中...");
+                    // 存取錯誤處理
                     files = null;
                 }
 
@@ -88,27 +99,27 @@ namespace CSV_Data_Filter.Utils
                 {
                     foreach (var file in files)
                     {
-                        if (_cancellationToken.IsCancellationRequested) yield break;
+                        if (_cancellationToken.IsCancellationRequested)
+                            yield break;
 
                         var fileName = Path.GetFileName(file);
                         // 檔案篩選
                         if (!string.IsNullOrEmpty(fileInclude) && !fileName.Contains(fileInclude)) continue;
                         if (!string.IsNullOrEmpty(fileExclude) && fileName.Contains(fileExclude)) continue;
                         if (useFileDateFilter && !CompareDates(fileName, fileDateFormat, fileDateValue, fileDateOp)) continue;
-                        filteredFiles.Add(file);
+                        tempFiles.Add(file);
                     }
                 }
 
                 // 若為網路目錄且有符合條件檔案，robocopy整個目錄到本地暫存
-                if (current.StartsWith("\\\\") && filteredFiles.Count > 0)
+                if (current.StartsWith("\\\\") && tempFiles.Count > 0)
                 {
-                    _logAction($"發現網路目錄有符合條件檔案，正在複製: {current}");
                     string localDir = BulkCopyNetworkFolder(current, tempDir);
                     IEnumerable<string>? localFiles = null;
                     try
                     {
                         localFiles = Directory.EnumerateFiles(localDir, "*.csv", SearchOption.TopDirectoryOnly)
-                            .Where(f => filteredFiles.Any(ff => Path.GetFileName(ff) == Path.GetFileName(f)));
+                            .Where(f => tempFiles.Any(ff => Path.GetFileName(ff) == Path.GetFileName(f)));
                     }
                     catch { localFiles = null; }
                     foreach (var lf in localFiles ?? Array.Empty<string>())
@@ -116,24 +127,38 @@ namespace CSV_Data_Filter.Utils
                 }
                 else
                 {
-                    foreach (var f in filteredFiles)
+                    foreach (var f in tempFiles)
                         yield return f;
                 }
 
-                // 添加子目錄到處理佇列
-                IEnumerable<string>? subDirs = null;
+                // 釋放臨時檔案清單以減少記憶體使用
+                tempFiles.Clear();
+                tempFiles = null!;
+
+                // 添加子目錄到處理佇列，使用批次處理避免記憶體爆炸
                 try
                 {
-                    subDirs = Directory.EnumerateDirectories(current, "*", SearchOption.TopDirectoryOnly);
+                    // 子目錄也使用枚舉方式，減少記憶體使用
+                    foreach (var dir in Directory.EnumerateDirectories(current, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        dirs.Push(dir);
+                        
+                        // 如果佇列太長，優先處理一些目錄以避免記憶體過度使用
+                        if (dirs.Count > batchSize * 2)
+                            break;
+                    }
                 }
                 catch (Exception)
                 {
-                    // 減少錯誤log的頻率
-                    subDirs = null;
+                    // 處理存取錯誤，但不中斷處理
                 }
-
-                foreach (var dir in subDirs ?? Array.Empty<string>())
-                    dirs.Push(dir);
+                
+                // 如果處理了足夠多的目錄，則強制進行記憶體回收
+                if (processedDirs % batchSize == 0)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
             }
 
             _logAction($"目錄掃描完成，總共處理了 {processedDirs} 個目錄");
