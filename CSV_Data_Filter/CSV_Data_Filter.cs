@@ -1,9 +1,15 @@
-using CSV_Data_Filter.Models;
-using CSV_Data_Filter.Utils;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 using CsvHelper;
 using CsvHelper.Configuration;
-using System.Globalization;
-using System.Collections.Concurrent;
+using CSV_Data_Filter.Models;
+using CSV_Data_Filter.Utils;
 
 namespace CSV_Data_Filter
 {
@@ -13,97 +19,77 @@ namespace CSV_Data_Filter
     public partial class CSV_Data_Filter : Form
     {
         #region 專案資訊
-
         /// <summary>
         /// 專案名稱
         /// </summary>
         public const string PROJECT_NAME = "CSV Data Filter";
-
         /// <summary>
         /// 專案版本
         /// </summary>
         public const string PROJECT_VERSION = "1.0.0";
-
         /// <summary>
         /// 專案描述
         /// </summary>
         public const string PROJECT_DESCRIPTION = "CSV資料過濾與合併工具";
-
-        #endregion 專案資訊
+        #endregion
 
         #region 私有欄位
-
         /// <summary>
         /// 使用者選擇的來源資料夾路徑清單
         /// </summary>
         private List<string> _sourcePaths = new List<string>();
-
         /// <summary>
         /// 目標輸出資料夾
         /// </summary>
         private string _targetPath = "";
-
         /// <summary>
         /// 自訂輸出檔案名稱
         /// </summary>
         private string _customFileName = "";
-
         /// <summary>
         /// 欄位處理設定清單，對應每個選取欄位的處理方式
         /// </summary>
         private List<Models.ColumnConfig> _columnConfigs = new List<Models.ColumnConfig>();
-
         /// <summary>
         /// 篩選條件清單
         /// </summary>
         private List<Models.FilterCondition> _filterConditions = new List<Models.FilterCondition>();
-
         /// <summary>
         /// 是否在輸出檔案最後一欄加入來源檔案名稱
         /// </summary>
         private bool _addFileNameColumn = false;
-
         /// <summary>
         /// 是否在輸出檔案最後一欄加入來源目錄名稱
         /// </summary>
         private bool _addDirectoryNameColumn = false;
-
         /// <summary>
         /// 是否跳過缺少欄位的檔案
         /// </summary>
         private bool _skipIncompleteFiles = false;
-
         /// <summary>
         /// 是否保留暫存檔案
         /// </summary>
         private bool _keepTempFiles = false;
-
         /// <summary>
         /// 日期格式字串
         /// </summary>
         private string _dateFormat = "yyyy-MM-dd";
-
         /// <summary>
         /// 總檔案數
         /// </summary>
         private int _totalFiles = 0;
-
         /// <summary>
         /// 已處理檔案數
         /// </summary>
         private int _processedFiles = 0;
-
         /// <summary>
         /// 取消令牌來源
         /// </summary>
         private CancellationTokenSource? _cts;
-
         private bool EnableDebugLog => chkDebugLog != null && chkDebugLog.Checked;
-
-        #endregion 私有欄位
+        #endregion
 
         #region 建構子
-
         /// <summary>
         /// 建構子，初始化UI元件
         /// </summary>
@@ -111,184 +97,156 @@ namespace CSV_Data_Filter
         {
             InitializeComponent();
             this.Text = $"{PROJECT_NAME} v{PROJECT_VERSION}";
+
+            // 新增：雙擊所有欄位加入選擇欄位
+            lstAvailColumns.MouseDoubleClick += (s, e) => {
+                AddSelectedColumn(lstAvailColumns, lstSelectedColumns);
+            };
+            // 新增：雙擊選擇欄位移除
+            lstSelectedColumns.MouseDoubleClick += (s, e) => {
+                RemoveSelectedColumn(lstSelectedColumns);
+            };
             
-            // 設置拖放功能
+            // 啟用拖放功能
             lstAvailColumns.AllowDrop = true;
-            lstAvailColumns.DragEnter += LstAvailColumns_DragEnter;
-            lstAvailColumns.DragDrop += LstAvailColumns_DragDrop;
-            
-            // 新增來源路徑的拖放功能
             lstSourcePaths.AllowDrop = true;
-            lstSourcePaths.DragEnter += LstSourcePaths_DragEnter;
-            lstSourcePaths.DragDrop += LstSourcePaths_DragDrop;
             
-            // 設置默認執行緒數
-            nudThreads.Value = Math.Max(1, Environment.ProcessorCount - 1);
+            // 註冊拖放事件處理函數
+            lstAvailColumns.DragEnter += ListBox_DragEnter;
+            lstAvailColumns.DragDrop += AvailColumns_DragDrop;
             
-            // 設置日期操作下拉選項
-            cboFolderDateOp.Items.AddRange(new string[] { "等於", "大於", "小於", "不等於" });
-            cboFileDateOp.Items.AddRange(new string[] { "等於", "大於", "小於", "不等於" });
-            cboFolderDateOp.SelectedIndex = 0;
-            cboFileDateOp.SelectedIndex = 0;
-            
-            // 設置日期格式和日期值
-            txtFolderDateFormat.Text = _dateFormat;
-            txtFileDateFormat.Text = _dateFormat;
-            dtpFolderDateValue.Format = DateTimePickerFormat.Custom;
-            dtpFolderDateValue.CustomFormat = _dateFormat;
-            dtpFileDateValue.Format = DateTimePickerFormat.Custom;
-            dtpFileDateValue.CustomFormat = _dateFormat;
-            
-            // 日期過濾條件初始禁用
-            txtFolderDateFormat.Enabled = false;
-            cboFolderDateOp.Enabled = false;
-            dtpFolderDateValue.Enabled = false;
-            txtFileDateFormat.Enabled = false;
-            cboFileDateOp.Enabled = false;
-            dtpFileDateValue.Enabled = false;
-            
-            // 綁定事件
-            chkFolderDate.CheckedChanged += (s, e) => {
-                txtFolderDateFormat.Enabled = chkFolderDate.Checked;
-                cboFolderDateOp.Enabled = chkFolderDate.Checked;
-                dtpFolderDateValue.Enabled = chkFolderDate.Checked;
-            };
-            chkFileDate.CheckedChanged += (s, e) => {
-                txtFileDateFormat.Enabled = chkFileDate.Checked;
-                cboFileDateOp.Enabled = chkFileDate.Checked;
-                dtpFileDateValue.Enabled = chkFileDate.Checked;
-            };
-            
-            // 設置雙擊事件
-            lstAvailColumns.DoubleClick += (s, e) => { btnAddColumn_Click(btnAddColumn, EventArgs.Empty); };
-            lstSelectedColumns.DoubleClick += (s, e) => { btnRemoveColumn_Click(btnRemoveColumn, EventArgs.Empty); };
+            lstSourcePaths.DragEnter += ListBox_DragEnter;
+            lstSourcePaths.DragDrop += SourcePaths_DragDrop;
         }
+        #endregion
 
-        /// <summary>
-        /// 處理來源路徑拖放進入事件
-        /// </summary>
-        private void LstSourcePaths_DragEnter(object? sender, DragEventArgs e)
-        {
-            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
-            {
-                string[] items = (string[])e.Data.GetData(DataFormats.FileDrop);
-                if (items.Length > 0)
-                {
-                    // 接受CSV檔案或目錄的拖放
-                    if (Directory.Exists(items[0]) || 
-                        (File.Exists(items[0]) && items[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        e.Effect = DragDropEffects.Copy;
-                        return;
-                    }
-                }
-            }
-            e.Effect = DragDropEffects.None;
-        }
-        
-        /// <summary>
-        /// 處理來源路徑拖放事件
-        /// </summary>
-        private void LstSourcePaths_DragDrop(object? sender, DragEventArgs e)
-        {
-            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
-            {
-                string[] items = (string[])e.Data.GetData(DataFormats.FileDrop);
-                foreach (string item in items)
-                {
-                    string pathToAdd;
-                    
-                    if (File.Exists(item) && item.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // 若是CSV檔案，添加其所在目錄
-                        pathToAdd = Path.GetDirectoryName(item) ?? "";
-                        AddLog(lstLog, $"添加CSV檔案所在目錄: {pathToAdd}");
-                    }
-                    else if (Directory.Exists(item))
-                    {
-                        // 若是目錄，直接添加
-                        pathToAdd = item;
-                        AddLog(lstLog, $"添加目錄: {pathToAdd}");
-                    }
-                    else
-                    {
-                        // 其他情況跳過
-                        continue;
-                    }
-                    
-                    if (!string.IsNullOrEmpty(pathToAdd) && !_sourcePaths.Contains(pathToAdd))
-                    {
-                        _sourcePaths.Add(pathToAdd);
-                        lstSourcePaths.Items.Add(pathToAdd);
-                    }
-                }
-            }
-        }
-
+        #region 拖放功能處理
         /// <summary>
         /// 處理拖放進入事件
         /// </summary>
-        private void LstAvailColumns_DragEnter(object? sender, DragEventArgs e)
+        private void ListBox_DragEnter(object? sender, DragEventArgs e)
         {
-            // 檢查是否有文件被拖放
             if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                if (files.Length > 0 && files[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                {
-                    e.Effect = DragDropEffects.Copy;
-                    return;
-                }
+                e.Effect = DragDropEffects.Copy;
             }
-            e.Effect = DragDropEffects.None;
+            else
+            {
+                e.Effect = DragDropEffects.None;
+            }
         }
         
         /// <summary>
-        /// 處理拖放CSV檔案的事件
+        /// 處理將CSV檔案拖放到欄位區域的事件
         /// </summary>
-        private void LstAvailColumns_DragDrop(object? sender, DragEventArgs e)
+        private void AvailColumns_DragDrop(object? sender, DragEventArgs e)
         {
-            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
+            if (e.Data == null) return;
+            
+            string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (files == null || files.Length == 0) return;
+            
+            // 尋找第一個CSV檔案
+            string? csvFile = files.FirstOrDefault(f => f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase));
+            if (csvFile == null)
             {
-                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                if (files.Length > 0 && files[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                MessageBox.Show("請拖放CSV檔案以獲取欄位", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            
+            // 從CSV檔案獲取欄位
+            GetColumnsFromFile(csvFile);
+        }
+        
+        /// <summary>
+        /// 處理將文件或資料夾拖放到資料來源路徑的事件
+        /// </summary>
+        private void SourcePaths_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (e.Data == null) return;
+            
+            string[]? items = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (items == null || items.Length == 0) return;
+            
+            foreach (string item in items)
+            {
+                if (Directory.Exists(item))
                 {
-                    string csvFile = files[0];
-                    AddLog(lstLog, $"拖放CSV檔案: {csvFile}");
-                    
-                    try
+                    // 添加資料夾路徑
+                    AddPathIfNotSubdirectory(item);
+                }
+                else if (File.Exists(item) && item.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 如果是CSV檔案，添加其所在的資料夾
+                    string? directory = Path.GetDirectoryName(item);
+                    if (!string.IsNullOrEmpty(directory))
                     {
-                        // 讀取CSV標頭
-                        var csvProcessor = new Utils.CsvProcessor(msg => AddLog(lstLog, msg), CancellationToken.None, _dateFormat);
-                        string[]? headers = csvProcessor.GetCsvHeaders(csvFile);
-                        
-                        if (headers != null && headers.Length > 0)
-                        {
-                            lstAvailColumns.Items.Clear();
-                            foreach (var header in headers)
-                            {
-                                lstAvailColumns.Items.Add(header);
-                            }
-                            AddLog(lstLog, $"從 {Path.GetFileName(csvFile)} 中讀取了 {headers.Length} 個欄位");
-                        }
-                        else
-                        {
-                            MessageBox.Show("無法從檔案讀取欄位標題", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"讀取CSV檔案時出錯: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        AddLog(lstLog, $"錯誤: {ex.Message}");
+                        AddPathIfNotSubdirectory(directory);
                     }
                 }
             }
         }
-
-        #endregion 建構子
+        
+        /// <summary>
+        /// 添加路徑到資料來源路徑列表，檢查是否已存在相同路徑
+        /// </summary>
+        private void AddPathIfNotSubdirectory(string path)
+        {
+            // 檢查路徑是否已存在
+            if (_sourcePaths.Contains(path))
+            {
+                AddLog(lstLog, $"路徑已存在: {path}");
+                return;
+            }
+            
+            // 添加新路徑
+            _sourcePaths.Add(path);
+            lstSourcePaths.Items.Add(path);
+            AddLog(lstLog, $"已新增來源路徑: {path}");
+            
+            // 提示使用者如果存在子目錄與上層目錄的情況
+            CheckAndLogPathRelationships();
+        }
+        
+        /// <summary>
+        /// 檢查資料來源路徑中是否存在子目錄與上層目錄的關係，並提示使用者
+        /// </summary>
+        private void CheckAndLogPathRelationships()
+        {
+            if (_sourcePaths.Count <= 1) return;
+            
+            // 查找所有的子目錄-上層目錄關係
+            var relationshipFound = false;
+            
+            foreach (var path1 in _sourcePaths)
+            {
+                foreach (var path2 in _sourcePaths)
+                {
+                    if (path1 == path2) continue;
+                    
+                    // 檢查path1是否是path2的子目錄
+                    string path2WithSep = path2.EndsWith(Path.DirectorySeparatorChar.ToString()) || 
+                                         path2.EndsWith(Path.AltDirectorySeparatorChar.ToString())
+                                        ? path2
+                                        : path2 + Path.DirectorySeparatorChar;
+                    
+                    if (path1.StartsWith(path2WithSep, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddLog(lstLog, $"提示: 路徑 '{path1}' 是 '{path2}' 的子目錄");
+                        AddLog(lstLog, $"      搜尋時將自動跳過子目錄以避免重複處理");
+                        relationshipFound = true;
+                    }
+                }
+            }
+            
+            if (relationshipFound)
+            {
+                AddLog(lstLog, "注意: 搜尋時只會處理包含所有子目錄的上層目錄，子目錄只會在UI中保留顯示");
+            }
+        }
+        #endregion
 
         #region 私有方法
-
         private void AddSourcePath()
         {
             using (var dialog = new FolderBrowserDialog())
@@ -329,55 +287,98 @@ namespace CSV_Data_Filter
             }
         }
 
-        private void GetCsvColumns(ListBox sourcePathsListBox, ListBox availColumnsListBox)
+        /// <summary>
+        /// 從指定的CSV檔案中獲取欄位
+        /// </summary>
+        private void GetColumnsFromFile(string filePath)
         {
-            // 使用檔案選擇對話框讓使用者選擇CSV檔案
-            using (var dialog = new OpenFileDialog())
+            AddLog(lstLog, $"從檔案中讀取欄位: {Path.GetFileName(filePath)}");
+            
+            try
             {
-                dialog.Filter = "CSV Files (*.csv)|*.csv";
-                dialog.Title = "選擇一個CSV檔案來獲取欄位名稱";
+                // 清空現有欄位
+                lstAvailColumns.Items.Clear();
                 
-                if (dialog.ShowDialog() == DialogResult.OK)
+                // 讀取 CSV 標頭
+                using (var reader = new StreamReader(filePath))
                 {
-                    string firstCsvFile = dialog.FileName;
-                    AddLog(lstLog, $"已選擇檔案: {firstCsvFile}");
-                    
-                    try
+                    string? headerLine = reader.ReadLine();
+                    if (headerLine != null)
                     {
-                        // 讀取 CSV 標頭
-                        using (var reader = new StreamReader(firstCsvFile))
+                        // 解析標頭行以獲取欄位名稱
+                        var headers = headerLine.Split(',');
+                        foreach (var header in headers)
                         {
-                            string? headerLine = reader.ReadLine();
-                            if (headerLine != null)
+                            // 移除引號並清理欄位名稱
+                            string fieldName = header.Trim().Trim('"', '\'');
+                            if (!string.IsNullOrWhiteSpace(fieldName))
                             {
-                                var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-                                {
-                                    HasHeaderRecord = true
-                                };
-                                using (var csv = new CsvReader(new StringReader(headerLine + "\r\n"), config))
-                                {
-                                    csv.Read();
-                                    csv.ReadHeader();
-                                    if (lstAvailColumns != null)
-                                    {
-                                        lstAvailColumns.Items.Clear();
-                                        foreach (var header in csv.HeaderRecord ?? Array.Empty<string>())
-                                        {
-                                            lstAvailColumns.Items.Add(header);
-                                        }
-                                        AddLog(lstLog, $"從 {Path.GetFileName(firstCsvFile)} 中讀取了 {csv.HeaderRecord?.Length ?? 0} 個欄位");
-                                    }
-                                }
+                                lstAvailColumns.Items.Add(fieldName);
                             }
                         }
+                        
+                        AddLog(lstLog, $"成功讀取 {lstAvailColumns.Items.Count} 個欄位");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        MessageBox.Show($"讀取 CSV 標頭時出錯: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        AddLog(lstLog, $"錯誤: {ex.Message}");
+                        AddLog(lstLog, "CSV檔案標頭為空");
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                AddLog(lstLog, $"讀取欄位時出錯: {ex.Message}");
+                MessageBox.Show($"無法從檔案讀取欄位: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 遞迴尋找第一個符合條件的CSV檔案（副檔名.csv，可擴充為名稱包含/排除等）
+        /// </summary>
+        private string? FindFirstCsvFile(string dir)
+        {
+            try
+            {
+                if (EnableDebugLog)
+                {
+                    AddLog(lstLog, $"[Debug] 搜尋目錄: {dir}");
+                }
+                
+                // 先檢查當前目錄中的文件
+                var files = Directory.GetFiles(dir, "*.csv", SearchOption.TopDirectoryOnly);
+                if (files.Length > 0)
+                {
+                    if (EnableDebugLog)
+                    {
+                        AddLog(lstLog, $"[Debug] 在 {dir} 中找到 {files.Length} 個CSV檔案，返回第一個: {Path.GetFileName(files[0])}");
+                    }
+                    return files[0];
+                }
+                
+                // 如果當前目錄沒有符合條件的文件，則檢查所有子目錄
+                var subDirs = Directory.GetDirectories(dir);
+                if (EnableDebugLog && subDirs.Length > 0)
+                {
+                    AddLog(lstLog, $"[Debug] 目錄 {dir} 沒有找到CSV檔案，將搜尋 {subDirs.Length} 個子目錄");
+                }
+                
+                foreach (var sub in subDirs)
+                {
+                    var found = FindFirstCsvFile(sub);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (EnableDebugLog)
+                {
+                    AddLog(lstLog, $"[Debug] 搜尋目錄 {dir} 時出錯: {ex.Message}");
+                }
+            }
+            return null;
         }
 
         private void AddSelectedColumn(ListBox availColumnsListBox, ListBox selectedColumnsListBox)
@@ -389,7 +390,7 @@ namespace CSV_Data_Filter
                 {
                     var config = new Models.ColumnConfig(columnName);
                     _columnConfigs.Add(config);
-
+                    
                     // 顯示自訂名稱（初始時與原始名稱相同）
                     selectedColumnsListBox.Items.Add($"{config.CustomName} ({config.Name})");
                     AddLog(lstLog, $"已新增欄位: {columnName}");
@@ -431,15 +432,15 @@ namespace CSV_Data_Filter
                     {
                         var originalName = match.Groups[1].Value;
                         var config = _columnConfigs.Find(c => c.Name == originalName);
-
-                        if (config != null)
+                    
+                    if (config != null)
+                    {
+                        using (var configForm = new ColumnConfigForm(config))
                         {
-                            using (var configForm = new ColumnConfigForm(config))
+                            if (configForm.ShowDialog() == DialogResult.OK)
                             {
-                                if (configForm.ShowDialog() == DialogResult.OK)
-                                {
                                     // 更新ListBox中的顯示文字
-                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] =
+                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] = 
                                         $"{config.CustomName} ({config.Name})";
                                     AddLog(lstLog, $"已設定欄位 {originalName} 的處理方式");
                                 }
@@ -463,8 +464,7 @@ namespace CSV_Data_Filter
             }
 
             // 解析顯示字串，取得原始欄位名稱清單
-            var columnNames = selectedColumnsListBox.Items.Cast<string>().Select(item =>
-            {
+            var columnNames = selectedColumnsListBox.Items.Cast<string>().Select(item => {
                 int idx = item.LastIndexOf(" (");
                 if (idx >= 0 && item.EndsWith(")"))
                     return item.Substring(idx + 2, item.Length - idx - 3);
@@ -478,7 +478,7 @@ namespace CSV_Data_Filter
                     var condition = filterForm.Condition;
                     _filterConditions.Add(condition);
                     filtersListBox.Items.Add(condition.ToString());
-
+                    
                     AddLog(lstLog, $"已新增篩選條件: {condition}");
                 }
             }
@@ -491,12 +491,12 @@ namespace CSV_Data_Filter
                 var conditionStr = filtersListBox.SelectedItem?.ToString() ?? "";
                 var index = filtersListBox.SelectedIndex;
                 filtersListBox.Items.RemoveAt(index);
-
+                
                 if (index < _filterConditions.Count)
                 {
                     _filterConditions.RemoveAt(index);
                 }
-
+                
                 AddLog(lstLog, $"已移除篩選條件: {conditionStr}");
             }
         }
@@ -506,292 +506,284 @@ namespace CSV_Data_Filter
         /// </summary>
         private async void ExecuteProcess()
         {
+            if (_cts != null)
+            {
+                SafeAddLog(lstLog, "已有任務執行中");
+                return;
+            }
+            _cts = new CancellationTokenSource();
             try
             {
-                // 檢查來源路徑
-                if (_sourcePaths.Count == 0)
-                {
-                    MessageBox.Show("請至少新增一個來源路徑", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+                // 設置按鈕狀態
+                this.Invoke((Action)(() => {
+                    btnExecute.Enabled = false;
+                    btnCancel.Enabled = true;
+                }));
                 
-                // 檢查目標路徑，如果未設定則使用「文件」資料夾
-                if (string.IsNullOrWhiteSpace(_targetPath))
-                {
-                    _targetPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                    txtTargetPath.Text = _targetPath;
-                    SafeAddLog(lstLog, $"未指定目標資料夾，使用預設「文件」資料夾: {_targetPath}");
-                }
-
-                // 3. 建立進度報告和取消令牌
-                _cts = new CancellationTokenSource();
-                
-                // 4. 更新UI
-                btnExecute.Enabled = false;
-                btnCancel.Enabled = true;
-                progressBar.Value = 0;
                 SafeAddLog(lstLog, "開始處理...");
-                
-                // 5. 建立臨時目錄和輔助類
-                var fileHelper = new Utils.FileSystemHelper(
-                    message => SafeAddLog(lstLog, message),
-                    _cts.Token, 
-                    _dateFormat
-                );
-                string tempDir = fileHelper.CreateTempDirectory();
-                
-                // 1. 確認要處理的欄位清單
-                var columnConfigs = new List<Models.ColumnConfig>(_columnConfigs);
-                
-                // 如果沒有選擇任何欄位，自動選擇所有欄位
-                if (columnConfigs.Count == 0)
-                {
-                    SafeAddLog(lstLog, "未選擇任何欄位，將自動使用檔案中的所有欄位");
-                    
-                    // 尋找第一個符合條件的CSV檔案
-                    string? firstCsvFile = fileHelper.FindFirstCsvFile(_sourcePaths);
-                    
-                    if (firstCsvFile != null)
-                    {
-                        var tempCsvProcessor = new Utils.CsvProcessor(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
-                        string[]? headers = tempCsvProcessor.GetCsvHeaders(firstCsvFile);
-                        
-                        if (headers != null && headers.Length > 0)
-                        {
-                            foreach (var header in headers)
-                            {
-                                var config = new Models.ColumnConfig(header);
-                                columnConfigs.Add(config);
-                                _columnConfigs.Add(config); // 更新到主配置列表
-                                
-                                // 同步更新UI
-                                this.Invoke((Action)(() => {
-                                    lstSelectedColumns.Items.Add($"{config.CustomName} ({config.Name})");
-                                }));
-                            }
-                            SafeAddLog(lstLog, $"已自動新增 {headers.Length} 個欄位");
-                        }
-                        else
-                        {
-                            MessageBox.Show("無法從檔案獲取欄位標題，請手動選擇欄位", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            btnExecute.Enabled = true;
-                            btnCancel.Enabled = false;
-                            _cts.Dispose();
-                            _cts = null;
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        MessageBox.Show("找不到任何CSV檔案，請確認路徑和篩選條件", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        btnExecute.Enabled = true;
-                        btnCancel.Enabled = false;
-                        _cts.Dispose();
-                        _cts = null;
-                        return;
-                    }
-                }
-                
-                // 確認現在有欄位配置
-                if (columnConfigs.Count == 0)
-                {
-                    MessageBox.Show("請至少選擇一個輸出欄位", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    btnExecute.Enabled = true;
-                    btnCancel.Enabled = false;
-                    _cts.Dispose();
-                    _cts = null;
-                    return;
-                }
-                
-                // 2. 確認過濾條件
-                var filterConditions = new List<Models.FilterCondition>(_filterConditions);
-                
-                // 紀錄開始時間
-                var startTime = DateTime.Now;
-                
-                // 找出符合條件的所有CSV檔案
+
+                // 讀取自訂檔案名稱
+                this.Invoke((Action)(() => {
+                    _customFileName = txtOutputFileName.Text.Trim();
+                    _addFileNameColumn = chkAddFileName.Checked;
+                    _addDirectoryNameColumn = chkAddDirectoryName.Checked;
+                    _skipIncompleteFiles = chkSkipIncompleteFiles.Checked;
+                    _keepTempFiles = chkKeepTempFiles.Checked;
+                }));
+
+                // 1. 建立輔助類別
+                var fileHelper = new Utils.FileSystemHelper(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
+                var csvProcessor = new Utils.CsvProcessor(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
+
+                // 2. 建立唯一暫存目錄
+                var tempDir = fileHelper.CreateTempDirectory();
+
+                // 3. 異步尋找所有符合條件的 CSV 檔案（避免UI鎖死）
                 SafeAddLog(lstLog, "正在搜尋符合條件的CSV檔案...");
-                var files = await fileHelper.FindCsvFilesAsync(
+                
+                if (EnableDebugLog)
+                {
+                    foreach (var sourcePath in _sourcePaths)
+                    {
+                        SafeAddLog(lstLog, $"[Debug] 搜尋源路徑: {sourcePath}");
+                        var testDirs = Directory.GetDirectories(sourcePath);
+                        foreach (var testDir in testDirs)
+                        {
+                            SafeAddLog(lstLog, $"[Debug] 發現子目錄: {Path.GetFileName(testDir)}");
+                        }
+                    }
+                }
+                
+                var matchingFiles = await fileHelper.FindCsvFilesAsync(
                     _sourcePaths,
-                    txtFolderInclude.Text, 
-                    txtFolderExclude.Text, 
-                    chkFolderDate.Checked, 
-                    _dateFormat, 
-                    cboFolderDateOp.Text, 
+                    txtFolderInclude.Text,
+                    txtFolderExclude.Text,
+                    chkFolderDate.Checked,
+                    txtFolderDateFormat.Text,
+                    cboFolderDateOp.Text,
                     dtpFolderDateValue.Value,
-                    txtFileInclude.Text, 
-                    txtFileExclude.Text, 
-                    chkFileDate.Checked, 
-                    _dateFormat, 
-                    cboFileDateOp.Text, 
-                    dtpFileDateValue.Value, 
+                    txtFileInclude.Text,
+                    txtFileExclude.Text,
+                    chkFileDate.Checked,
+                    txtFileDateFormat.Text,
+                    cboFileDateOp.Text,
+                    dtpFileDateValue.Value,
                     tempDir
                 );
                 
-                // 更新總檔案數
-                _totalFiles = files.Count;
+                _totalFiles = matchingFiles.Count;
                 _processedFiles = 0;
-                SafeAddLog(lstLog, $"找到 {_totalFiles} 個符合條件的CSV檔案");
                 
                 if (_totalFiles == 0)
                 {
-                    SafeAddLog(lstLog, "沒有找到符合條件的檔案，處理結束");
+                    SafeAddLog(lstLog, "找不到符合條件的檔案");
+                    
+                    // 輸出更多調試信息以定位問題
+                    if (EnableDebugLog)
+                    {
+                        SafeAddLog(lstLog, $"[Debug] 資料夾包含條件: \"{txtFolderInclude.Text}\"");
+                        SafeAddLog(lstLog, $"[Debug] 資料夾排除條件: \"{txtFolderExclude.Text}\"");
+                        SafeAddLog(lstLog, $"[Debug] 檔案包含條件: \"{txtFileInclude.Text}\"");
+                        SafeAddLog(lstLog, $"[Debug] 檔案排除條件: \"{txtFileExclude.Text}\"");
+                        
+                        // 手動檢查test_dir1和test_dir2目錄
+                        foreach (var sourcePath in _sourcePaths)
+                        {
+                            var testDir1 = Path.Combine(sourcePath, "test_dir1");
+                            var testDir2 = Path.Combine(sourcePath, "test_dir2");
+                            
+                            if (Directory.Exists(testDir1))
+                            {
+                                SafeAddLog(lstLog, $"[Debug] 檢查 test_dir1: {testDir1}");
+                                var files = Directory.GetFiles(testDir1, "*.csv", SearchOption.AllDirectories);
+                                SafeAddLog(lstLog, $"[Debug] test_dir1 中找到 {files.Length} 個 CSV 檔案");
+                                foreach (var file in files.Take(5)) // 只顯示前5個檔案
+                                {
+                                    SafeAddLog(lstLog, $"[Debug] 檔案: {Path.GetFileName(file)}");
+                                }
+                            }
+                            
+                            if (Directory.Exists(testDir2))
+                            {
+                                SafeAddLog(lstLog, $"[Debug] 檢查 test_dir2: {testDir2}");
+                                var files = Directory.GetFiles(testDir2, "*.csv", SearchOption.AllDirectories);
+                                SafeAddLog(lstLog, $"[Debug] test_dir2 中找到 {files.Length} 個 CSV 檔案");
+                                foreach (var file in files.Take(5)) // 只顯示前5個檔案
+                                {
+                                    SafeAddLog(lstLog, $"[Debug] 檔案: {Path.GetFileName(file)}");
+                                }
+                            }
+                        }
+                    }
+                    
                     btnExecute.Enabled = true;
                     btnCancel.Enabled = false;
-                    _cts.Dispose();
-                    _cts = null;
                     return;
                 }
                 
-                // 處理每個檔案並收集結果（臨時文件路徑）
-                var csvProcessor = new Utils.CsvProcessor(
-                    message => {
-                        if (EnableDebugLog || !message.StartsWith("[Debug]"))
-                            SafeAddLog(lstLog, message);
-                    }, 
-                    _cts.Token, 
-                    _dateFormat
-                );
+                SafeAddLog(lstLog, $"找到 {_totalFiles} 個符合條件的 CSV 檔案");
                 
-                var tempFiles = new ConcurrentBag<string>();
-                var parallelOptions = new ParallelOptions
+                // 在調試模式下顯示找到的檔案分佈
+                if (EnableDebugLog)
                 {
-                    MaxDegreeOfParallelism = Environment.ProcessorCount,
-                    CancellationToken = _cts.Token
-                };
-                
-                await Task.Run(() =>
-                {
-                    Parallel.ForEach(files, parallelOptions, async (file) =>
+                    var filesByDir = matchingFiles.GroupBy(f => Path.GetDirectoryName(f))
+                                                .ToDictionary(g => g.Key, g => g.Count());
+                    foreach (var dir in filesByDir)
                     {
-                        var tempFile = await csvProcessor.ProcessCsvFileAsync(
-                            file, 
-                            columnConfigs, 
-                            filterConditions, 
-                            _addFileNameColumn, 
-                            _addDirectoryNameColumn, 
-                            tempDir,
-                            _skipIncompleteFiles
-                        );
-                        
-                        if (tempFile != null)
+                        SafeAddLog(lstLog, $"[Debug] 目錄 {dir.Key} 中找到 {dir.Value} 個符合條件的檔案");
+                    }
+                }
+                
+                // 設置進度條範圍
+                this.Invoke((Action)(() => {
+                progressBar.Maximum = _totalFiles;
+                progressBar.Value = 0;
+                }));
+
+                // 4. 處理欄位選擇，若未選擇則自動選擇所有欄位
+                var columnConfigs = new List<ColumnConfig>();
+                this.Invoke((Action)(() => {
+                    // 使用已配置的欄位配置
+                    if (_columnConfigs.Count > 0)
+                    {
+                        columnConfigs = new List<ColumnConfig>(_columnConfigs);
+                    }
+                    else
+                    {
+                        // 從第一個檔案取得所有欄位，建立預設配置
+                        var allHeaders = csvProcessor.GetCsvHeaders(matchingFiles[0]);
+                        if (allHeaders != null)
                         {
-                            tempFiles.Add(tempFile);
+                            foreach (var header in allHeaders)
+                            {
+                                columnConfigs.Add(new ColumnConfig(header));
+                            }
                         }
-                        
-                        Interlocked.Increment(ref _processedFiles);
-                        
-                        // 更新進度條
-                        this.Invoke((Action)(() =>
+                    }
+                }));
+
+                // 5. 開始處理檔案
+                var tempFiles = new List<string>();
+                var semaphore = new SemaphoreSlim((int)nudThreads.Value);
+                var tasks = new List<Task>();
+                foreach (var file in matchingFiles)
+                {
+                    await semaphore.WaitAsync();
+                    tasks.Add(Task.Run(async () => {
+                        try
                         {
-                            progressBar.Value = (int)((_processedFiles / (double)_totalFiles) * 100);
-                            // 使用進度訊息更新日誌
-                            SafeAddLog(lstLog, $"進度: {_processedFiles} / {_totalFiles}");
-                        }));
-                    });
-                }, _cts.Token);
+                            if (_cts.Token.IsCancellationRequested)
+                                return;
+                            var tempFile = await csvProcessor.ProcessCsvFileAsync(
+                                file,
+                                columnConfigs,
+                                _filterConditions,
+                                _addFileNameColumn,
+                                _addDirectoryNameColumn,
+                                tempDir,
+                                _skipIncompleteFiles
+                            );
+                            if (!string.IsNullOrEmpty(tempFile))
+                            {
+                                lock (tempFiles)
+                                {
+                                    tempFiles.Add(tempFile);
+                                }
+                            }
+                            lock (this)
+                            {
+                                _processedFiles++;
+                                this.Invoke((Action)(() => {
+                                    progressBar.Value = _processedFiles;
+                                    SafeAddLog(lstLog, $"已處理: {Path.GetFileName(file)} ({_processedFiles}/{_totalFiles})");
+                                }));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            this.Invoke((Action)(() => {
+                                SafeAddLog(lstLog, $"處理檔案 {Path.GetFileName(file)} 時出錯: {ex.Message}");
+                            }));
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }, _cts.Token));
+                }
+                await Task.WhenAll(tasks);
                 
                 if (_cts.Token.IsCancellationRequested)
                 {
-                    SafeAddLog(lstLog, "處理已取消");
-                    btnExecute.Enabled = true;
-                    btnCancel.Enabled = false;
-                    fileHelper.CleanupTempFiles(tempFiles.ToList(), tempDir);
-                    return;
-                }
-                
-                SafeAddLog(lstLog, $"處理完成，共處理 {_processedFiles} 個檔案，耗時 {(DateTime.Now - startTime).TotalSeconds:F1} 秒");
-                
-                // 6. 使用優化的合併方法（大幅提升效率）並檢查檔案名稱重複
-                SafeAddLog(lstLog, "正在合併處理結果...");
-                
-                // 使用自訂檔案名稱或預設名稱
-                string baseFileName;
-                if (!string.IsNullOrWhiteSpace(_customFileName))
-                {
-                    // 確保檔案名稱有.csv副檔名
-                    baseFileName = _customFileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) 
-                        ? _customFileName 
-                        : $"{_customFileName}.csv";
+                    SafeAddLog(lstLog, "操作已取消");
                 }
                 else
                 {
-                    baseFileName = $"Merged_CSV_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
-                }
-                
-                // 生成目標檔案路徑
-                string targetFilePath = Path.Combine(_targetPath, baseFileName);
-                
-                // 檢查檔案是否已存在，如果存在則使用不重複的檔名
-                if (File.Exists(targetFilePath))
-                {
-                    targetFilePath = csvProcessor.GenerateUniqueFileName(_targetPath, baseFileName);
-                    SafeAddLog(lstLog, $"檔案已存在，使用新檔名: {Path.GetFileName(targetFilePath)}");
-                }
-                
-                // 執行合併
-                var mergedFilePath = await csvProcessor.MergeCsvFilesOptimizedAsync(
-                    tempFiles.ToList(), 
-                    targetFilePath, 
-                    (current, total) => this.Invoke((Action)(() =>
+                    // 6. 使用優化的合併方法（大幅提升效率）並檢查檔案名稱重複
+                    SafeAddLog(lstLog, "正在合併處理結果...");
+                    
+                    // 使用自訂檔案名稱或預設名稱
+                    string baseFileName;
+                    if (!string.IsNullOrWhiteSpace(_customFileName))
                     {
-                        progressBar.Value = (int)((current / (double)total) * 100);
-                        // 更新日誌
-                        SafeAddLog(lstLog, $"合併進度: {current} / {total}");
-                    }))
-                );
-                
-                SafeAddLog(lstLog, $"合併完成，輸出文件: {mergedFilePath}");
-                
-                // 7. 清理暫存檔案（除非使用者選擇保留）
-                if (!_keepTempFiles)
-                {
-                    SafeAddLog(lstLog, "正在清理暫存檔案...");
-                    fileHelper.CleanupTempFiles(tempFiles.ToList(), tempDir);
+                        // 確保檔案名稱有.csv副檔名
+                        baseFileName = _customFileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) 
+                            ? _customFileName 
+                            : $"{_customFileName}.csv";
+                    }
+                    else
+                    {
+                        baseFileName = $"Merged_CSV_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+                    }
+                    
+                    // 檢查目標路徑，如果未設定則使用「文件」資料夾
+                    if (string.IsNullOrWhiteSpace(_targetPath))
+                    {
+                        string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                        _targetPath = documentsPath;
+                        SafeAddLog(lstLog, $"未指定目標資料夾，預設使用「文件」資料夾: {documentsPath}");
+                        
+                        // 更新UI顯示
+                        this.Invoke((Action)(() => {
+                            txtTargetPath.Text = documentsPath;
+                        }));
+                    }
+                    
+                    string finalFile = csvProcessor.GenerateUniqueFileName(_targetPath, baseFileName);
+                    
+                    await csvProcessor.MergeCsvFilesOptimizedAsync(tempFiles, finalFile, (processed, total) => {
+                        this.Invoke((Action)(() => {
+                            progressBar.Value = Math.Min(progressBar.Maximum, processed);
+                        }));
+                    });
+                    
+                    SafeAddLog(lstLog, $"處理完成，結果已保存至: {finalFile}");
+                    
+                    // 7. 根據設定決定是否清理臨時檔案
+                    if (_keepTempFiles)
+                    {
+                        SafeAddLog(lstLog, $"暫存檔案已保留於: {tempDir}");
+                        SafeAddLog(lstLog, $"暫存檔案數量: {tempFiles.Count}");
+                    }
+                    else
+                    {
+                        fileHelper.CleanupTempFiles(tempFiles, tempDir);
+                        SafeAddLog(lstLog, "已清理暫存檔案");
+                    }
                 }
-                else
-                {
-                    SafeAddLog(lstLog, $"已保留暫存檔案於: {tempDir}");
-                }
-                
-                SafeAddLog(lstLog, "處理完成!");
-                
-                // 顯示完成訊息
-                MessageBox.Show($"CSV檔案處理完成!\n輸出檔案: {mergedFilePath}", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                
-                // 恢復UI狀態
-                btnExecute.Enabled = true;
-                btnCancel.Enabled = false;
-                progressBar.Value = 100;
-                // 更新最終狀態到日誌
-                SafeAddLog(lstLog, "完成");
-                
-                // 釋放資源
-                _cts.Dispose();
-                _cts = null;
-            }
-            catch (OperationCanceledException)
-            {
-                SafeAddLog(lstLog, "處理已取消");
-                btnExecute.Enabled = true;
-                btnCancel.Enabled = false;
-                progressBar.Value = 0;
-                // 更新取消狀態到日誌
-                SafeAddLog(lstLog, "已取消");
             }
             catch (Exception ex)
             {
-                SafeAddLog(lstLog, $"處理時發生錯誤: {ex.Message}");
-                if (EnableDebugLog)
-                    SafeAddLog(lstLog, $"詳細錯誤: {ex}");
-                    
-                MessageBox.Show($"處理時發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                
+                SafeAddLog(lstLog, $"發生錯誤: {ex.Message}");
+                MessageBox.Show($"執行過程中發生錯誤: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _cts = null;
+                this.Invoke((Action)(() => {
                 btnExecute.Enabled = true;
                 btnCancel.Enabled = false;
-                progressBar.Value = 0;
-                // 更新錯誤狀態到日誌
-                SafeAddLog(lstLog, "錯誤");
+                }));
             }
         }
 
@@ -805,8 +797,7 @@ namespace CSV_Data_Filter
                 return;
             if (logList.InvokeRequired)
             {
-                logList.Invoke(new Action(() =>
-                {
+                logList.Invoke(new Action(() => {
                     string timestampedMessage = $"[{DateTime.Now:HH:mm:ss}] {message}";
                     logList.Items.Add(timestampedMessage);
                     // 自動滾動到最新訊息並取消選取
@@ -849,10 +840,24 @@ namespace CSV_Data_Filter
             }
         }
 
-        #endregion 私有方法
+        private void GetCsvColumns(ListBox sourcePathsListBox, ListBox availColumnsListBox)
+        {
+            // 使用檔案選擇對話框讓使用者選擇CSV檔案
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "CSV檔案 (*.csv)|*.csv|所有檔案 (*.*)|*.*";
+                dialog.Title = "選擇CSV檔案以取得欄位";
+                
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    string selectedFile = dialog.FileName;
+                    GetColumnsFromFile(selectedFile);
+                }
+            }
+        }
+        #endregion
 
         #region 事件處理方法
-
         // 按鈕事件處理方法
         private void btnAddPath_Click(object sender, EventArgs e)
         {
@@ -919,7 +924,6 @@ namespace CSV_Data_Filter
                 e.Handled = true;
             }
         }
-
-        #endregion 事件處理方法
+        #endregion
     }
 }
