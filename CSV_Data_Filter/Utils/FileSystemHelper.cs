@@ -487,5 +487,50 @@ namespace CSV_Data_Filter.Utils
 
             try { Directory.Delete(tempDir, true); } catch { }
         }
+
+        /// <summary>
+        /// 從給定的路徑列表中尋找第一個CSV檔案
+        /// </summary>
+        /// <param name="sourcePaths">要搜尋的路徑列表</param>
+        /// <returns>找到的第一個CSV檔案路徑，如果沒有找到則返回null</returns>
+        public string? FindFirstCsvFile(List<string> sourcePaths)
+        {
+            foreach (var path in sourcePaths.Where(p => !string.IsNullOrEmpty(p)))
+            {
+                string? result = FindFirstCsvFileInDirectory(path);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+        
+        /// <summary>
+        /// 在指定目錄中尋找第一個CSV檔案（包括子目錄）
+        /// </summary>
+        /// <param name="directory">要搜索的目錄</param>
+        /// <returns>找到的第一個CSV檔案路徑，如果沒有找到則返回null</returns>
+        private string? FindFirstCsvFileInDirectory(string directory)
+        {
+            try
+            {
+                // 先檢查當前目錄中的檔案
+                var files = Directory.GetFiles(directory, "*.csv", SearchOption.TopDirectoryOnly);
+                if (files.Length > 0)
+                    return files[0];
+                
+                // 如果當前目錄沒有找到，則檢查子目錄
+                foreach (var subDir in Directory.GetDirectories(directory))
+                {
+                    var found = FindFirstCsvFileInDirectory(subDir);
+                    if (found != null)
+                        return found;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logAction($"搜尋CSV檔案時出錯: {ex.Message}");
+            }
+            return null;
+        }
     }
 }

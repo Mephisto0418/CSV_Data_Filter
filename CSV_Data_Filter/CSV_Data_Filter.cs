@@ -111,17 +111,121 @@ namespace CSV_Data_Filter
         {
             InitializeComponent();
             this.Text = $"{PROJECT_NAME} v{PROJECT_VERSION}";
+            
+            // 設置拖放功能
+            lstAvailColumns.AllowDrop = true;
+            lstAvailColumns.DragEnter += LstAvailColumns_DragEnter;
+            lstAvailColumns.DragDrop += LstAvailColumns_DragDrop;
+            
+            // 設置默認執行緒數
+            nudThreads.Value = Math.Max(1, Environment.ProcessorCount - 1);
+            
+            // 設置日期操作下拉選項
+            cboFolderDateOp.Items.AddRange(new string[] { "等於", "大於", "小於", "不等於" });
+            cboFileDateOp.Items.AddRange(new string[] { "等於", "大於", "小於", "不等於" });
+            cboFolderDateOp.SelectedIndex = 0;
+            cboFileDateOp.SelectedIndex = 0;
+            
+            // 設置日期格式和日期值
+            txtFolderDateFormat.Text = _dateFormat;
+            txtFileDateFormat.Text = _dateFormat;
+            dtpFolderDateValue.Format = DateTimePickerFormat.Custom;
+            dtpFolderDateValue.CustomFormat = _dateFormat;
+            dtpFileDateValue.Format = DateTimePickerFormat.Custom;
+            dtpFileDateValue.CustomFormat = _dateFormat;
+            
+            // 日期過濾條件初始禁用
+            txtFolderDateFormat.Enabled = false;
+            cboFolderDateOp.Enabled = false;
+            dtpFolderDateValue.Enabled = false;
+            txtFileDateFormat.Enabled = false;
+            cboFileDateOp.Enabled = false;
+            dtpFileDateValue.Enabled = false;
+            
+            // 綁定事件
+            chkFolderDate.CheckedChanged += (s, e) => {
+                txtFolderDateFormat.Enabled = chkFolderDate.Checked;
+                cboFolderDateOp.Enabled = chkFolderDate.Checked;
+                dtpFolderDateValue.Enabled = chkFolderDate.Checked;
+            };
+            chkFileDate.CheckedChanged += (s, e) => {
+                txtFileDateFormat.Enabled = chkFileDate.Checked;
+                cboFileDateOp.Enabled = chkFileDate.Checked;
+                dtpFileDateValue.Enabled = chkFileDate.Checked;
+            };
+            
+            // 設置雙擊事件
+            lstAvailColumns.DoubleClick += (s, e) => { btnAddColumn_Click(btnAddColumn, EventArgs.Empty); };
+            lstSelectedColumns.DoubleClick += (s, e) => { btnRemoveColumn_Click(btnRemoveColumn, EventArgs.Empty); };
+        }
 
-            // 新增：雙擊所有欄位加入選擇欄位
-            lstAvailColumns.MouseDoubleClick += (s, e) =>
+        /// <summary>
+        /// 處理拖放進入事件
+        /// </summary>
+        private void LstAvailColumns_DragEnter(object? sender, DragEventArgs e)
+        {
+            // 檢查是否有文件被拖放
+            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                AddSelectedColumn(lstAvailColumns, lstSelectedColumns);
-            };
-            // 新增：雙擊選擇欄位移除
-            lstSelectedColumns.MouseDoubleClick += (s, e) =>
+                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                if (files.Length > 0 && files[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    e.Effect = DragDropEffects.Copy;
+                    return;
+                }
+            }
+            e.Effect = DragDropEffects.None;
+        }
+        
+        /// <summary>
+        /// 處理拖放CSV檔案的事件
+        /// </summary>
+        private void LstAvailColumns_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                RemoveSelectedColumn(lstSelectedColumns);
-            };
+                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                if (files.Length > 0 && files[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    string csvFile = files[0];
+                    AddLog(lstLog, $"拖放CSV檔案: {csvFile}");
+                    
+                    try
+                    {
+                        // 讀取CSV標頭
+                        var csvProcessor = new Utils.CsvProcessor(msg => AddLog(lstLog, msg), CancellationToken.None, _dateFormat);
+                        string[]? headers = csvProcessor.GetCsvHeaders(csvFile);
+                        
+                        if (headers != null && headers.Length > 0)
+                        {
+                            lstAvailColumns.Items.Clear();
+                            foreach (var header in headers)
+                            {
+                                lstAvailColumns.Items.Add(header);
+                            }
+                            AddLog(lstLog, $"從 {Path.GetFileName(csvFile)} 中讀取了 {headers.Length} 個欄位");
+                            
+                            // 如果來源路徑列表中沒有這個檔案所在的目錄，自動添加
+                            string directory = Path.GetDirectoryName(csvFile) ?? "";
+                            if (!string.IsNullOrEmpty(directory) && !_sourcePaths.Contains(directory))
+                            {
+                                _sourcePaths.Add(directory);
+                                lstSourcePaths.Items.Add(directory);
+                                AddLog(lstLog, $"已自動新增來源路徑: {directory}");
+                            }
+                        }
+                        else
+                        {
+                            MessageBox.Show("無法從檔案讀取欄位標題", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"讀取CSV檔案時出錯: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        AddLog(lstLog, $"錯誤: {ex.Message}");
+                    }
+                }
+            }
         }
 
         #endregion 建構子
@@ -369,6 +473,50 @@ namespace CSV_Data_Filter
 
                 // 1. 確認要處理的欄位清單
                 var columnConfigs = new List<Models.ColumnConfig>(_columnConfigs);
+                
+                // 如果沒有選擇任何欄位，自動選擇所有欄位
+                if (columnConfigs.Count == 0)
+                {
+                    SafeAddLog(lstLog, "未選擇任何欄位，將自動使用檔案中的所有欄位");
+                    
+                    // 使用輔助類尋找第一個符合條件的CSV檔案
+                    var tempFileHelper = new Utils.FileSystemHelper(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
+                    string? firstCsvFile = tempFileHelper.FindFirstCsvFile(_sourcePaths);
+                    
+                    if (firstCsvFile != null)
+                    {
+                        var tempCsvProcessor = new Utils.CsvProcessor(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
+                        string[]? headers = tempCsvProcessor.GetCsvHeaders(firstCsvFile);
+                        
+                        if (headers != null && headers.Length > 0)
+                        {
+                            foreach (var header in headers)
+                            {
+                                var config = new Models.ColumnConfig(header);
+                                columnConfigs.Add(config);
+                                // 同步更新UI
+                                this.Invoke((Action)(() => {
+                                    lstSelectedColumns.Items.Add($"{config.CustomName} ({config.Name})");
+                                }));
+                            }
+                            SafeAddLog(lstLog, $"已自動新增 {headers.Length} 個欄位");
+                        }
+                        else
+                        {
+                            MessageBox.Show("無法從檔案獲取欄位，請手動選擇欄位", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            btnExecute.Enabled = true;
+                            btnCancel.Enabled = false;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("找不到任何CSV檔案，請確認路徑和篩選條件", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        btnExecute.Enabled = true;
+                        btnCancel.Enabled = false;
+                        return;
+                    }
+                }
                 
                 // 2. 確認過濾條件
                 var filterConditions = new List<Models.FilterCondition>(_filterConditions);
