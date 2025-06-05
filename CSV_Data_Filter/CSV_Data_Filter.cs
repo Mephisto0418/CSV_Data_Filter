@@ -26,7 +26,7 @@ namespace CSV_Data_Filter
         /// <summary>
         /// 專案版本
         /// </summary>
-        public const string PROJECT_VERSION = "1.0.0";
+        public const string PROJECT_VERSION = "1.0.4";
         /// <summary>
         /// 專案描述
         /// </summary>
