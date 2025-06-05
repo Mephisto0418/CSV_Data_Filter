@@ -442,7 +442,8 @@ namespace CSV_Data_Filter.Utils
                 // 寫入選擇的列（按配置輸出，使用原始名稱查找值，使用自訂名稱或原始名稱作為輸出標頭）
                 foreach (var config in columnConfigs)
                 {
-                    string value = "";                    // 使用原始欄位名稱查找資料，忽略大小寫
+                    string value = "";                    
+                    // 使用原始欄位名稱查找資料，忽略大小寫
                     
                     // 嘗試直接匹配
                     if (fieldDict.TryGetValue(config.Name, out string? fieldValue))
