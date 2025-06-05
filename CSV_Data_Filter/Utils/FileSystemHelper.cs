@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,6 +10,22 @@ using System.Threading.Tasks;
 
 namespace CSV_Data_Filter.Utils
 {
+    /// <summary>
+    /// 文件搜尋結果類別，包含搜索到的文件列表和網路路徑映射
+    /// </summary>
+    public class FindCsvFilesResult
+    {
+        /// <summary>
+        /// 搜尋到的CSV文件列表
+        /// </summary>
+        public List<string> Files { get; set; } = new List<string>();
+        
+        /// <summary>
+        /// 網路路徑到本地暫存路徑的映射字典
+        /// </summary>
+        public ConcurrentDictionary<string, string> NetworkPathMappings { get; set; } = new ConcurrentDictionary<string, string>();
+    }
+    
     /// <summary>
     /// 文件系統處理的輔助類
     /// </summary>
@@ -101,7 +118,7 @@ namespace CSV_Data_Filter.Utils
                         // 使用更高效的方式枚舉文件
                         files = Directory.GetFiles(current, "*.csv");
                     }
-                    catch (Exception ex) 
+                    catch (Exception) 
                     { 
                         // 只記錄重要的存取錯誤，避免過多log
                         if (processedDirs % 5000 == 0)
@@ -130,7 +147,7 @@ namespace CSV_Data_Filter.Utils
                     // 使用固定大小的數組暫存目錄清單，避免不必要的記憶體分配
                     subDirs = Directory.GetDirectories(current);
                 }
-                catch (Exception ex) 
+                catch (Exception) 
                 { 
                     // 減少錯誤log的頻率
                 }
@@ -159,10 +176,41 @@ namespace CSV_Data_Filter.Utils
         }
 
         /// <summary>
+        /// 使用robocopy將整個資料夾複製到本地暫存目錄，回傳本地資料夾路徑
+        /// </summary>
+        private string BulkCopyNetworkFolder(string sourcePath, string tempDir)
+        {
+            string folderName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string localFolder = Path.Combine(tempDir, folderName);
+            try
+            {
+                Directory.CreateDirectory(localFolder);
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "robocopy",
+                    Arguments = $"\"{sourcePath}\" \"{localFolder}\" /E /NFL /NDL /NJH /NJS /NC /NS /NP",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    proc?.WaitForExit();
+                }
+                _logAction($"已將網路目錄 {sourcePath} 複製到本地暫存資料夾 {localFolder}");
+                return localFolder;
+            }
+            catch
+            {
+                _logAction($"robocopy複製網路資料夾失敗，將使用原始路徑 {sourcePath}");
+                return sourcePath;
+            }
+        }
+
+        /// <summary>
         /// 查找符合條件的CSV文件（大量目錄/檔案時效能佳，網路路徑自動複製到本地暫存）
         /// 多執行緒安全：如需共用暫存檔案清單，請使用ConcurrentBag等執行緒安全集合。
         /// </summary>
-        public List<string> FindCsvFiles(
+        public FindCsvFilesResult FindCsvFiles(
             List<string> sourcePaths,
             string folderInclude,
             string folderExclude,
@@ -179,6 +227,9 @@ namespace CSV_Data_Filter.Utils
             string tempDir
         )
         {
+            // 準備結果物件
+            var result = new FindCsvFilesResult();
+            
             // 首先，過濾掉子目錄
             var filteredPaths = FilterOutSubdirectories(sourcePaths);
             _logAction($"原始路徑數量: {sourcePaths.Count}, 過濾後路徑數量: {filteredPaths.Count}");
@@ -186,6 +237,9 @@ namespace CSV_Data_Filter.Utils
             var results = new ConcurrentBag<string>();
             var totalPaths = filteredPaths.Count;
             int processedPaths = 0;
+            
+            // 暫存目錄對應表，用於記錄網路路徑與本地暫存路徑的映射關係
+            var networkPathMapping = new ConcurrentDictionary<string, string>();
             
             // 限制最大並行搜尋數量，避免系統資源耗盡
             int maxConcurrency = Math.Min(Environment.ProcessorCount * 2, 8);
@@ -205,9 +259,18 @@ namespace CSV_Data_Filter.Utils
                     
                     // 判斷是否為網路路徑
                     bool isNetworkPath = sourcePath.StartsWith("\\\\");
+                    string pathToSearch = sourcePath;
+                    
+                    // 如果是網路路徑，先將檔案複製到本地暫存目錄
+                    if (isNetworkPath)
+                    {
+                        _logAction($"檢測到網路路徑: {sourcePath}，準備將檔案複製到本地暫存目錄");
+                        pathToSearch = BulkCopyNetworkFolder(sourcePath, tempDir);
+                        networkPathMapping[sourcePath] = pathToSearch;
+                    }
                     
                     foreach (var file in EnumerateCsvFiles(
-                        sourcePath, 
+                        pathToSearch, 
                         folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
                         fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue,
                         tempDir))
@@ -217,18 +280,27 @@ namespace CSV_Data_Filter.Utils
                             break;
                         }
                         
-                        results.Add(file);
+                        // 如果是網路路徑中的檔案，記錄下來以便後續處理
+                        if (isNetworkPath)
+                        {
+                            results.Add(file);
+                        }
+                        else
+                        {
+                            results.Add(file);
+                        }
+                        
                         fileCount++;
                         
                         // 每處理500個檔案輸出一次進度
                         if (fileCount % 500 == 0)
                         {
-                            _logAction($"在 {Path.GetFileName(sourcePath)} 中已找到 {fileCount} 個符合條件的檔案");
+                            _logAction($"在 {Path.GetFileName(pathToSearch)} 中已找到 {fileCount} 個符合條件的檔案");
                         }
                     }
                     
                     Interlocked.Increment(ref processedPaths);
-                    _logAction($"完成搜尋路徑: {Path.GetFileName(sourcePath)} (找到 {fileCount} 個檔案) - 進度: {processedPaths}/{totalPaths}");
+                    _logAction($"完成搜尋路徑: {Path.GetFileName(pathToSearch)} (找到 {fileCount} 個檔案) - 進度: {processedPaths}/{totalPaths}");
                 }
                 finally
                 {
@@ -241,14 +313,30 @@ namespace CSV_Data_Filter.Utils
             Task.WhenAll(tasks).GetAwaiter().GetResult();
             
             var finalResults = results.ToList();
+            
+            // 記錄網路路徑映射，這對後續處理很重要
+            if (networkPathMapping.Count > 0)
+            {
+                _logAction($"共有 {networkPathMapping.Count} 個網路路徑被複製到本地暫存目錄");
+                foreach (var mapping in networkPathMapping)
+                {
+                    _logAction($"網路路徑映射: {mapping.Key} -> {mapping.Value}");
+                }
+            }
+            
             _logAction($"搜尋完成，總共找到 {finalResults.Count} 個符合條件的CSV檔案");
-            return finalResults;
+            
+            // 填充結果
+            result.Files = finalResults;
+            result.NetworkPathMappings = networkPathMapping;
+            
+            return result;
         }
 
         /// <summary>
         /// 查找符合條件的CSV文件（異步版本，避免UI執行緒阻塞）
         /// </summary>
-        public async Task<List<string>> FindCsvFilesAsync(
+        public async Task<FindCsvFilesResult> FindCsvFilesAsync(
             List<string> sourcePaths,
             string folderInclude,
             string folderExclude,

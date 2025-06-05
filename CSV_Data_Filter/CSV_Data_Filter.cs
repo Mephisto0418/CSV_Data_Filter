@@ -554,7 +554,8 @@ namespace CSV_Data_Filter
                     }
                 }
                 
-                var matchingFiles = await fileHelper.FindCsvFilesAsync(
+                // 執行檔案搜尋，這會自動處理網路路徑複製到本地暫存
+                var result = await fileHelper.FindCsvFilesAsync(
                     _sourcePaths,
                     txtFolderInclude.Text,
                     txtFolderExclude.Text,
@@ -570,6 +571,16 @@ namespace CSV_Data_Filter
                     dtpFileDateValue.Value,
                     tempDir
                 );
+                
+                var matchingFiles = result.Files;
+                var networkPathMappings = result.NetworkPathMappings;
+                
+                // 將網路路徑映射傳遞給CSV處理器
+                if (networkPathMappings != null && networkPathMappings.Count > 0)
+                {
+                    SafeAddLog(lstLog, $"發現 {networkPathMappings.Count} 個網路路徑映射，將用於後續處理");
+                    csvProcessor.AddNetworkPathMappings(networkPathMappings);
+                }
                 
                 _totalFiles = matchingFiles.Count;
                 _processedFiles = 0;
@@ -626,7 +637,7 @@ namespace CSV_Data_Filter
                 // 在調試模式下顯示找到的檔案分佈
                 if (EnableDebugLog)
                 {
-                    var filesByDir = matchingFiles.GroupBy(f => Path.GetDirectoryName(f))
+                    var filesByDir = matchingFiles.GroupBy(f => Path.GetDirectoryName(f) ?? string.Empty)
                                                 .ToDictionary(g => g.Key, g => g.Count());
                     foreach (var dir in filesByDir)
                     {

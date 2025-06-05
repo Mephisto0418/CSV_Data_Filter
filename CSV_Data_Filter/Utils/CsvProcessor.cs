@@ -7,6 +7,9 @@ using System.Threading.Tasks;
 using CsvHelper;
 using CsvHelper.Configuration;
 using CSV_Data_Filter.Models;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Text;
 
 namespace CSV_Data_Filter.Utils
 {
@@ -18,7 +21,10 @@ namespace CSV_Data_Filter.Utils
         private readonly Action<string> _logAction;
         private readonly CancellationToken _cancellationToken;
         private string _dateFormat;
-
+        
+        // 網路路徑映射字典，記錄網路路徑到本地暫存路徑的映射關係
+        private readonly ConcurrentDictionary<string, string> _networkPathMappings = new ConcurrentDictionary<string, string>();
+        
         /// <summary>
         /// 初始化 CSV 處理器
         /// </summary>
@@ -30,6 +36,69 @@ namespace CSV_Data_Filter.Utils
             _logAction = logAction;
             _cancellationToken = cancellationToken;
             _dateFormat = dateFormat;
+        }
+
+        /// <summary>
+        /// 添加網路路徑映射，記錄網路路徑與本地暫存路徑的對應關係
+        /// </summary>
+        public void AddNetworkPathMapping(string networkPath, string localPath)
+        {
+            if (!string.IsNullOrEmpty(networkPath) && !string.IsNullOrEmpty(localPath))
+            {
+                _networkPathMappings[networkPath] = localPath;
+                _logAction($"已記錄網路路徑映射: {networkPath} -> {localPath}");
+            }
+        }
+        
+        /// <summary>
+        /// 添加多個網路路徑映射
+        /// </summary>
+        public void AddNetworkPathMappings(ConcurrentDictionary<string, string> mappings)
+        {
+            if (mappings != null && mappings.Count > 0)
+            {
+                foreach (var mapping in mappings)
+                {
+                    _networkPathMappings[mapping.Key] = mapping.Value;
+                }
+                _logAction($"已添加 {mappings.Count} 個網路路徑映射");
+            }
+        }
+        
+        /// <summary>
+        /// 獲取網路檔案的本地映射路徑，如果不是網路檔案則返回原路徑
+        /// </summary>
+        private string GetNetworkFileMappingPath(string filePath)
+        {
+            // 判斷文件是否來自網路路徑
+            bool isNetworkFile = filePath.StartsWith("\\\\");
+            if (!isNetworkFile)
+                return filePath;
+            
+            // 檢查是否有直接的路徑映射
+            if (_networkPathMappings.TryGetValue(filePath, out string? localPath))
+                return localPath;
+            
+            // 嘗試查找父目錄的映射
+            foreach (var mapping in _networkPathMappings)
+            {
+                string networkParentPath = mapping.Key;
+                string localParentPath = mapping.Value;
+                
+                // 如果網路檔案路徑是某個已映射網路目錄的子路徑
+                if (filePath.StartsWith(networkParentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 計算相對路徑並組合成本地暫存路徑
+                    string relativePath = filePath.Substring(networkParentPath.Length).TrimStart('\\', '/');
+                    string mappedLocalPath = Path.Combine(localParentPath, relativePath);
+                    
+                    _logAction($"找到網路檔案的本地映射: {filePath} -> {mappedLocalPath}");
+                    return mappedLocalPath;
+                }
+            }
+            
+            // 如果找不到映射，返回原始路徑
+            return filePath;
         }
 
         /// <summary>
@@ -77,75 +146,68 @@ namespace CSV_Data_Filter.Utils
         {
             try
             {
-                // 定義輸入 CSV 配置
-                var inputConfig = new CsvConfiguration(CultureInfo.InvariantCulture)
-                {
-                    HasHeaderRecord = true,
-                    MissingFieldFound = null,
-                    // 添加緩衝設定，避免一次讀取過多資料
-                    CacheFields = true,
-                    ReadingExceptionOccurred = args => false // 忽略讀取錯誤，繼續處理下一行
-                };
+                // 檢查文件是否來自網路路徑，如果是則使用映射後的本地暫存路徑
+                string actualFilePath = GetNetworkFileMappingPath(filePath);
+                string originalFilePath = filePath; // 保留原始路徑用於顯示和輸出
                 
-                // 產生唯一的暫存檔名，避免檔名衝突
-                string baseFileName = Path.GetFileNameWithoutExtension(filePath);
-                string extension = Path.GetExtension(filePath);
-                string uniqueFileName = $"{baseFileName}_{DateTime.Now:HHmmss}_{Guid.NewGuid().ToString("N")[..8]}{extension}";
-                string outputPath = Path.Combine(tempDir, uniqueFileName);
+                if (actualFilePath != filePath)
+                {
+                    _logAction($"使用本地暫存路徑處理檔案: {actualFilePath}");
+                }
                 
-                var outputConfig = new CsvConfiguration(CultureInfo.InvariantCulture) 
+                // 檢查文件是否存在
+                if (!File.Exists(actualFilePath))
                 {
-                    HasHeaderRecord = true
-                };
-
-                // 預先檢查檔案是否存在及可讀取
-                if (!File.Exists(filePath))
-                {
-                    _logAction($"檔案不存在: {filePath}");
+                    _logAction($"找不到檔案: {filePath}");
                     return null;
                 }
 
-                // 檢查檔案前100行，尋找符合所有欄位的標題列（與檔案處理整合在一起）
-                var (hasValidHeader, headerFields) = await FindValidHeaderRowAsync(filePath, columnConfigs, 100);
-                
-                if (!hasValidHeader)
+                // 尋找標題行（最多檢查前100行，找到包含所有必要欄位的行）
+                var (hasValidHeader, headerFields) = await FindValidHeaderRowAsync(actualFilePath, columnConfigs, 100);
+                if (!hasValidHeader || headerFields == null)
                 {
-                    _logAction($"跳過檔案 {Path.GetFileName(filePath)}：前100行中找不到符合的標題列");
-                    return null;
-                }
-                
-                if (headerFields == null || headerFields.Count == 0)
-                {
-                    _logAction($"無法讀取文件標頭: {Path.GetFileName(filePath)}");
-                    return null;
-                }
-                
-                // 使用緩衝區讀取並分批處理
-                const int batchSize = 5000; // 每次處理5000行
-                bool isFirstBatch = true;
-                int totalProcessed = 0;
-                
-                using (var writer = new StreamWriter(outputPath))
-                using (var csvWriter = new CsvWriter(writer, outputConfig))
-                {
-                    // 寫入表頭（使用自訂名稱）
-                    foreach (var config in columnConfigs)
+                    if (skipIncompleteFiles)
                     {
-                        csvWriter.WriteField(config.CustomName);
+                        _logAction($"跳過不完整檔案: {Path.GetFileName(filePath)} - 找不到完整的標題行");
+                        return null;
                     }
+                    
+                    _logAction($"警告: 檔案 {Path.GetFileName(filePath)} 找不到完整的標題行，將使用最佳匹配行");
+                    // 如果找不到標題行但選擇繼續處理，則使用欄位配置名稱作為標題
+                    headerFields = columnConfigs.Select(c => c.Name).ToList();
+                }
+                
+                // 建立臨時輸出檔案路徑
+                string outputPath = Path.Combine(tempDir, $"temp_{Path.GetFileNameWithoutExtension(filePath)}_{DateTime.Now.Ticks}.csv");
+                
+                // 記錄處理進度
+                long totalProcessed = 0;
+                const int batchSize = 10000; // 每次處理10000行，避免記憶體問題
+                
+                using (var csvWriter = new CsvWriter(new StreamWriter(outputPath), new CsvConfiguration(CultureInfo.InvariantCulture)))
+                {
+                    // 寫入標頭行
+                    foreach (var column in columnConfigs)
+                    {
+                        csvWriter.WriteField(column.CustomName ?? column.Name);
+                    }
+                    
+                    // 添加文件名列標題
                     if (addFileName)
                     {
                         csvWriter.WriteField("FileName");
                     }
+                    
+                    // 添加目錄名稱列標題
                     if (addDirectoryName)
                     {
                         csvWriter.WriteField("DirectoryName");
                     }
+                    
                     await csvWriter.NextRecordAsync();
                     
-                    // 分批讀取和處理資料
-                    using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 65536))
-                    using (var reader = new StreamReader(fileStream, bufferSize: 65536))
+                    // 讀取並處理數據
+                    using (var reader = new StreamReader(actualFilePath))
                     {
                         // 分批讀取並處理
                         List<string> lines = new List<string>(batchSize);
@@ -184,7 +246,7 @@ namespace CSV_Data_Filter.Utils
                             if (lines.Count >= batchSize)
                             {
                                 await ProcessBatchAsync(lines, headerFields, columnConfigs, filterConditions, 
-                                    addFileName, addDirectoryName, filePath, csvWriter);
+                                    addFileName, addDirectoryName, originalFilePath, csvWriter);
                                 
                                 totalProcessed += lines.Count;
                                 if (totalProcessed % 50000 == 0)
@@ -211,7 +273,7 @@ namespace CSV_Data_Filter.Utils
                         if (lines.Count > 0)
                         {
                             await ProcessBatchAsync(lines, headerFields, columnConfigs, filterConditions, 
-                                addFileName, addDirectoryName, filePath, csvWriter);
+                                addFileName, addDirectoryName, originalFilePath, csvWriter);
                             totalProcessed += lines.Count;
                         }
                     }
@@ -695,9 +757,9 @@ namespace CSV_Data_Filter.Utils
                         if (_cancellationToken.IsCancellationRequested)
                             break;
                             
-                        if (!File.Exists(tempFile))
+                        if (tempFile == null || !File.Exists(tempFile))
                         {
-                            _logAction($"警告: 找不到暫存檔案 {Path.GetFileName(tempFile)}，已跳過");
+                            _logAction($"警告: 找不到暫存檔案 {(tempFile == null ? "null" : Path.GetFileName(tempFile))}，已跳過");
                             continue;
                         }
 
@@ -719,10 +781,6 @@ namespace CSV_Data_Filter.Utils
                         {
                             // 其他文件：跳過標頭行，只複製資料行
                             await inputReader.ReadLineAsync(); // 跳過標頭行
-                            
-                            // 使用緩衝區批次讀取行
-                            char[] buffer = new char[bufferSize];
-                            int bytesRead;
                             
                             // 使用更有效率的方式複製檔案內容
                             string? line;
