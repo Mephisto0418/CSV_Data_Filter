@@ -28,9 +28,10 @@ namespace CSV_Data_Filter.Utils
     
     /// <summary>
     /// 文件系統處理的輔助類
-    /// </summary>
+    /// </summary>    
     public class FileSystemHelper
     {
+
         private readonly Action<string> _logAction;
         private readonly CancellationToken _cancellationToken;
         private readonly string _dateFormat;
@@ -50,7 +51,7 @@ namespace CSV_Data_Filter.Utils
 
         /// <summary>
         /// 高效列舉所有符合條件的CSV檔案（支援大量目錄/檔案，避免記憶體爆炸）
-        /// 若遇到網路目錄，僅當該目錄下有符合條件檔案時才robocopy整個目錄到本地暫存，並回傳本地檔案路徑。
+        /// 若遇到網路目錄，先使用原始路徑搜尋檔案，僅當找到符合條件的檔案時，才將這些檔案複製到本地暫存，並回傳本地檔案路徑。
         /// </summary>
         private IEnumerable<string> EnumerateCsvFiles(
             string rootPath,
@@ -176,7 +177,7 @@ namespace CSV_Data_Filter.Utils
         }
 
         /// <summary>
-        /// 使用robocopy將整個資料夾複製到本地暫存目錄，回傳本地資料夾路徑
+        /// 使用 .NET File.Copy 將整個資料夾複製到本地暫存目錄，回傳本地資料夾路徑
         /// </summary>
         private string BulkCopyNetworkFolder(string sourcePath, string tempDir)
         {
@@ -184,26 +185,143 @@ namespace CSV_Data_Filter.Utils
             string localFolder = Path.Combine(tempDir, folderName);
             try
             {
+                // 建立目標目錄
                 Directory.CreateDirectory(localFolder);
-                var psi = new ProcessStartInfo
+                int fileCount = 0;
+                int errorCount = 0;
+                
+                // 先遞迴找出所有的 CSV 檔案
+                var filesToCopy = new List<string>();
+                try
                 {
-                    FileName = "robocopy",
-                    Arguments = $"\"{sourcePath}\" \"{localFolder}\" /E /NFL /NDL /NJH /NJS /NC /NS /NP",
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-                using (var proc = Process.Start(psi))
-                {
-                    proc?.WaitForExit();
+                    // 使用 SearchOption.AllDirectories 遞迴搜尋
+                    filesToCopy.AddRange(Directory.GetFiles(sourcePath, "*.csv", SearchOption.AllDirectories));
+                    _logAction($"在 {sourcePath} 中找到 {filesToCopy.Count} 個 CSV 檔案準備複製");
                 }
-                _logAction($"已將網路目錄 {sourcePath} 複製到本地暫存資料夾 {localFolder}");
+                catch (Exception ex)
+                {
+                    _logAction($"在 {sourcePath} 中搜尋 CSV 檔案時發生錯誤：{ex.Message}");
+                    return sourcePath;
+                }
+                
+                // 使用並行處理來加速複製
+                Parallel.ForEach(
+                    filesToCopy,
+                    new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
+                    (file) => {
+                        try
+                        {
+                            string relativePath = file.Substring(sourcePath.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                            string targetPath = Path.Combine(localFolder, relativePath);
+                            // 確保目標目錄存在
+                            string? targetDir = Path.GetDirectoryName(targetPath);
+                            if (!string.IsNullOrEmpty(targetDir))
+                                Directory.CreateDirectory(targetDir);
+                                
+                            // 使用 .NET File.Copy 進行文件複製，效能高且穩定
+                            File.Copy(file, targetPath, true);
+                            
+                            Interlocked.Increment(ref fileCount);
+                            
+                            // 每複製 100 個檔案報告一次進度
+                            if (fileCount % 100 == 0)
+                            {
+                                _logAction($"已複製 {fileCount} 個檔案，失敗 {errorCount} 個");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.Increment(ref errorCount);
+                            // 避免大量錯誤訊息，僅在較大間隔報告錯誤
+                            if (errorCount % 50 == 0)
+                            {
+                                _logAction($"複製檔案時發生錯誤，已失敗 {errorCount} 個：{ex.Message}");
+                            }
+                        }
+                    }
+                );
+                
+                _logAction($"已將網路目錄 {sourcePath} 複製到本地暫存資料夾 {localFolder}，共 {fileCount} 個檔案成功，{errorCount} 個失敗");
                 return localFolder;
             }
-            catch
+            catch (Exception ex)
             {
-                _logAction($"robocopy複製網路資料夾失敗，將使用原始路徑 {sourcePath}");
+                _logAction($"複製網路資料夾失敗：{ex.Message}，將使用原始路徑 {sourcePath}");
                 return sourcePath;
             }
+        }
+
+        /// <summary>
+        /// 複製已經找到的CSV檔案到本地暫存目錄，回傳暫存檔案路徑
+        /// </summary>
+        /// <param name="sourcePath">來源目錄路徑</param>
+        /// <param name="filesToCopy">需要複製的檔案列表</param>
+        /// <param name="tempDir">暫存目錄</param>
+        /// <returns>暫存檔案路徑列表</returns>
+        private List<string> CopyFilesToTemp(string sourcePath, List<string> filesToCopy, string tempDir)
+        {
+            var result = new List<string>();
+            int fileCount = 0;
+            int errorCount = 0;
+            
+            string folderName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string localFolder = Path.Combine(tempDir, folderName);
+            
+            // 建立目標目錄
+            Directory.CreateDirectory(localFolder);
+            
+            _logAction($"準備將 {filesToCopy.Count} 個檔案從網路路徑 {sourcePath} 複製到本地暫存目錄");
+            
+            // 使用並行處理來加速複製
+            Parallel.ForEach(
+                filesToCopy,
+                new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
+                (file) => {
+                    try
+                    {
+                        if (_cancellationToken.IsCancellationRequested)
+                            return;
+                            
+                        // 計算相對路徑，保持原始目錄結構
+                        string relativePath = file.Substring(sourcePath.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        string targetPath = Path.Combine(localFolder, relativePath);
+                        
+                        // 確保目標目錄存在
+                        string? targetDir = Path.GetDirectoryName(targetPath);
+                        if (!string.IsNullOrEmpty(targetDir))
+                            Directory.CreateDirectory(targetDir);
+                            
+                        // 使用 .NET File.Copy 進行檔案複製
+                        File.Copy(file, targetPath, true);
+                        
+                        // 將複製後的檔案路徑加入結果集
+                        lock (result)
+                        {
+                            result.Add(targetPath);
+                        }
+                        
+                        int currentFileCount = Interlocked.Increment(ref fileCount);
+                        
+                        // 每複製 50 個檔案報告一次進度
+                        if (currentFileCount % 50 == 0)
+                        {
+                            _logAction($"已複製 {currentFileCount} 個檔案，失敗 {errorCount} 個");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        int currentErrorCount = Interlocked.Increment(ref errorCount);
+                        // 避免大量錯誤訊息，僅在較大間隔報告錯誤
+                        if (currentErrorCount % 25 == 0)
+                        {
+                            _logAction($"複製檔案時發生錯誤，已失敗 {currentErrorCount} 個：{ex.Message}");
+                        }
+                    }
+                }
+            );
+            
+            _logAction($"檔案複製完成，共 {fileCount} 個成功，{errorCount} 個失敗");
+            return result;
         }
 
         /// <summary>
@@ -256,19 +374,20 @@ namespace CSV_Data_Filter.Utils
                     }
                     
                     int fileCount = 0;
+                    var matchedFiles = new List<string>();
                     
                     // 判斷是否為網路路徑
                     bool isNetworkPath = sourcePath.StartsWith("\\\\");
+                    
+                    // 使用原始路徑進行搜尋，無論是否為網路路徑
                     string pathToSearch = sourcePath;
                     
-                    // 如果是網路路徑，先將檔案複製到本地暫存目錄
                     if (isNetworkPath)
                     {
-                        _logAction($"檢測到網路路徑: {sourcePath}，準備將檔案複製到本地暫存目錄");
-                        pathToSearch = BulkCopyNetworkFolder(sourcePath, tempDir);
-                        networkPathMapping[sourcePath] = pathToSearch;
+                        _logAction($"檢測到網路路徑: {sourcePath}，先進行檔案搜尋，之後再決定是否需要複製");
                     }
                     
+                    // 對任何路徑都使用原始路徑搜尋
                     foreach (var file in EnumerateCsvFiles(
                         pathToSearch, 
                         folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
@@ -280,22 +399,40 @@ namespace CSV_Data_Filter.Utils
                             break;
                         }
                         
-                        // 如果是網路路徑中的檔案，記錄下來以便後續處理
-                        if (isNetworkPath)
-                        {
-                            results.Add(file);
-                        }
-                        else
-                        {
-                            results.Add(file);
-                        }
-                        
+                        // 記錄符合條件的檔案路徑
+                        matchedFiles.Add(file);
                         fileCount++;
                         
                         // 每處理500個檔案輸出一次進度
                         if (fileCount % 500 == 0)
                         {
                             _logAction($"在 {Path.GetFileName(pathToSearch)} 中已找到 {fileCount} 個符合條件的檔案");
+                        }
+                    }
+                    
+                    // 只有在是網路路徑且找到檔案時，才複製檔案到暫存目錄
+                    if (isNetworkPath && matchedFiles.Count > 0)
+                    {
+                        _logAction($"網路路徑 {sourcePath} 中找到 {matchedFiles.Count} 個符合條件的檔案，準備複製到本地暫存目錄");
+                        
+                        // 複製找到的檔案到暫存目錄
+                        var localFiles = CopyFilesToTemp(sourcePath, matchedFiles, tempDir);
+                        
+                        // 記錄映射關係
+                        networkPathMapping[sourcePath] = tempDir;
+                        
+                        // 將本地暫存檔案路徑加入結果
+                        foreach (var localFile in localFiles)
+                        {
+                            results.Add(localFile);
+                        }
+                    }
+                    else
+                    {
+                        // 非網路路徑或網路路徑但沒有符合條件的檔案，直接加入結果
+                        foreach (var file in matchedFiles)
+                        {
+                            results.Add(file);
                         }
                     }
                     
@@ -334,9 +471,9 @@ namespace CSV_Data_Filter.Utils
         }
 
         /// <summary>
-        /// 查找符合條件的CSV文件（異步版本，避免UI執行緒阻塞）
+        /// 非同步查找CSV文件
         /// </summary>
-        public async Task<FindCsvFilesResult> FindCsvFilesAsync(
+        public Task<FindCsvFilesResult> FindCsvFilesAsync(
             List<string> sourcePaths,
             string folderInclude,
             string folderExclude,
@@ -353,7 +490,7 @@ namespace CSV_Data_Filter.Utils
             string tempDir
         )
         {
-            return await Task.Run(() => FindCsvFiles(
+            return Task.Run(() => FindCsvFiles(
                 sourcePaths, folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
                 fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue, tempDir));
         }
@@ -479,6 +616,48 @@ namespace CSV_Data_Filter.Utils
             string tempDir = Path.Combine(Path.GetTempPath(), $"CSVFilter_{DateTime.Now:yyyyMMddHHmmss}");
             Directory.CreateDirectory(tempDir);
             return tempDir;
+        }
+
+        /// <summary>
+        /// 獲取網路檔案的本地映射路徑，如果不是網路檔案則返回原路徑
+        /// </summary>
+        /// <param name="filePath">文件路徑</param>
+        /// <param name="networkMappings">網路路徑映射字典</param>
+        /// <returns>本地映射路徑或原路徑</returns>
+        public string GetNetworkFileMappingPath(string filePath, ConcurrentDictionary<string, string>? networkMappings = null)
+        {
+            // 使用提供的映射字典或新建一個空的字典
+            var mappings = networkMappings ?? new ConcurrentDictionary<string, string>();
+            
+            // 判斷文件是否來自網路路徑
+            bool isNetworkFile = filePath.StartsWith("\\\\");
+            if (!isNetworkFile)
+                return filePath;
+            
+            // 檢查是否有直接的路徑映射
+            if (mappings.TryGetValue(filePath, out string? localPath))
+                return localPath;
+            
+            // 嘗試查找父目錄的映射
+            foreach (var mapping in mappings)
+            {
+                string networkParentPath = mapping.Key;
+                string localParentPath = mapping.Value;
+                
+                // 如果網路檔案路徑是某個已映射網路目錄的子路徑
+                if (filePath.StartsWith(networkParentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 計算相對路徑並組合成本地暫存路徑
+                    string relativePath = filePath.Substring(networkParentPath.Length).TrimStart('\\', '/');
+                    string mappedLocalPath = Path.Combine(localParentPath, relativePath);
+                    
+                    _logAction($"找到網路檔案的本地映射: {filePath} -> {mappedLocalPath}");
+                    return mappedLocalPath;
+                }
+            }
+            
+            // 如果找不到映射，返回原始路徑
+            return filePath;
         }
 
         /// <summary>

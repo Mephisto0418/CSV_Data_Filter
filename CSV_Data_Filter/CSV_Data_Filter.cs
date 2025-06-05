@@ -418,7 +418,6 @@ namespace CSV_Data_Filter
                 }
             }
         }
-
         private void ConfigureSelectedColumn(ListBox selectedColumnsListBox)
         {
             if (selectedColumnsListBox.SelectedIndex != -1)
@@ -427,22 +426,50 @@ namespace CSV_Data_Filter
                 if (selectedItem != null)
                 {
                     // 從顯示文字中提取原始欄位名稱
-                    var match = System.Text.RegularExpressions.Regex.Match(selectedItem, @"\(([^)]+)\)$");
-                    if (match.Success)
+                    // 以最後一個 " (" 為分隔，並保留括號內容
+                    int idx = selectedItem.LastIndexOf(" (");
+                    if (idx >= 0 && selectedItem.EndsWith(")"))
                     {
-                        var originalName = match.Groups[1].Value;
+                        var originalName = selectedItem.Substring(idx + 2, selectedItem.Length - idx - 3);
                         var config = _columnConfigs.Find(c => c.Name == originalName);
-                    
-                    if (config != null)
-                    {
-                        using (var configForm = new ColumnConfigForm(config))
+
+                        if (config != null)
                         {
-                            if (configForm.ShowDialog() == DialogResult.OK)
+                            if (EnableDebugLog)
                             {
+                                AddLog(lstLog, $"[Debug] 設定欄位: {originalName}, CustomName: {config.CustomName}");
+                            }
+
+                            using (var configForm = new ColumnConfigForm(config))
+                            {
+                                if (configForm.ShowDialog() == DialogResult.OK)
+                                {
                                     // 更新ListBox中的顯示文字
-                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] = 
+                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] =
                                         $"{config.CustomName} ({config.Name})";
-                                    AddLog(lstLog, $"已設定欄位 {originalName} 的處理方式");
+                                    AddLog(lstLog, $"已設定欄位 '{originalName}' 的處理方式");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            AddLog(lstLog, $"警告: 找不到欄位配置: {originalName}");
+                        }
+                    }
+                    else
+                    {
+                        // 處理舊格式或未含括號的項目
+                        var config = _columnConfigs.Find(c => c.Name == selectedItem);
+                        if (config != null)
+                        {
+                            using (var configForm = new ColumnConfigForm(config))
+                            {
+                                if (configForm.ShowDialog() == DialogResult.OK)
+                                {
+                                    // 更新ListBox中的顯示文字
+                                    selectedColumnsListBox.Items[selectedColumnsListBox.SelectedIndex] =
+                                        $"{config.CustomName} ({config.Name})";
+                                    AddLog(lstLog, $"已設定欄位 '{selectedItem}' 的處理方式");
                                 }
                             }
                         }
@@ -531,14 +558,55 @@ namespace CSV_Data_Filter
                     _keepTempFiles = chkKeepTempFiles.Checked;
                 }));
 
-                // 1. 建立輔助類別
+                // 1. 處理欄位選擇，若未選擇則自動選擇所有欄位
+                var columnConfigs = new List<ColumnConfig>();
+                bool configOk = false;
+                this.Invoke((Action)(() => {
+                    // 使用已配置的欄位配置
+                    if (_columnConfigs.Count > 0)
+                    {
+                        columnConfigs = new List<ColumnConfig>(_columnConfigs);
+                        configOk = true;
+                    }
+                    else
+                    {
+                        // 使用"所有欄位"清單中的項目建立預設配置
+                        if (lstAvailColumns.Items.Count > 0)
+                        {
+                            foreach (var item in lstAvailColumns.Items)
+                            {
+                                if (item is string headerName && !string.IsNullOrEmpty(headerName))
+                                {
+                                    columnConfigs.Add(new ColumnConfig(headerName));
+                                }
+                            }
+                            configOk = columnConfigs.Count > 0;
+                        }
+                        else
+                        {
+                            // 如果"所有欄位"是空的，顯示訊息
+                            MessageBox.Show("請先選取CSV檔案或將檔案拖曳至「所有欄位」區域以獲取欄位配置。", 
+                                "缺少欄位配置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            configOk = false;
+                            SafeAddLog(lstLog, "操作中斷：缺少欄位配置，請先取得欄位清單");
+                        }
+                    }
+                }));
+                
+                // 如果沒有欄位配置，則中止處理
+                if (!configOk)
+                {
+                    btnExecute.Enabled = true;
+                    btnCancel.Enabled = false;
+                    return;
+                }                // 2. 建立輔助類別
                 var fileHelper = new Utils.FileSystemHelper(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
-                var csvProcessor = new Utils.CsvProcessor(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat);
+                var csvProcessor = new Utils.CsvProcessor(msg => SafeAddLog(lstLog, msg), _cts.Token, _dateFormat, fileHelper);
 
-                // 2. 建立唯一暫存目錄
+                // 3. 建立唯一暫存目錄
                 var tempDir = fileHelper.CreateTempDirectory();
 
-                // 3. 異步尋找所有符合條件的 CSV 檔案（避免UI鎖死）
+                // 4. 異步尋找所有符合條件的 CSV 檔案（避免UI鎖死）
                 SafeAddLog(lstLog, "正在搜尋符合條件的CSV檔案...");
                 
                 if (EnableDebugLog)
@@ -578,7 +646,6 @@ namespace CSV_Data_Filter
                 // 將網路路徑映射傳遞給CSV處理器
                 if (networkPathMappings != null && networkPathMappings.Count > 0)
                 {
-                    SafeAddLog(lstLog, $"發現 {networkPathMappings.Count} 個網路路徑映射，將用於後續處理");
                     csvProcessor.AddNetworkPathMappings(networkPathMappings);
                 }
                 
@@ -649,28 +716,6 @@ namespace CSV_Data_Filter
                 this.Invoke((Action)(() => {
                 progressBar.Maximum = _totalFiles;
                 progressBar.Value = 0;
-                }));
-
-                // 4. 處理欄位選擇，若未選擇則自動選擇所有欄位
-                var columnConfigs = new List<ColumnConfig>();
-                this.Invoke((Action)(() => {
-                    // 使用已配置的欄位配置
-                    if (_columnConfigs.Count > 0)
-                    {
-                        columnConfigs = new List<ColumnConfig>(_columnConfigs);
-                    }
-                    else
-                    {
-                        // 從第一個檔案取得所有欄位，建立預設配置
-                        var allHeaders = csvProcessor.GetCsvHeaders(matchingFiles[0]);
-                        if (allHeaders != null)
-                        {
-                            foreach (var header in allHeaders)
-                            {
-                                columnConfigs.Add(new ColumnConfig(header));
-                            }
-                        }
-                    }
                 }));
 
                 // 5. 開始處理檔案
@@ -759,10 +804,9 @@ namespace CSV_Data_Filter
                             txtTargetPath.Text = documentsPath;
                         }));
                     }
+                      string finalFile = csvProcessor.GenerateUniqueFileName(_targetPath, baseFileName);
                     
-                    string finalFile = csvProcessor.GenerateUniqueFileName(_targetPath, baseFileName);
-                    
-                    await csvProcessor.MergeCsvFilesOptimizedAsync(tempFiles, finalFile, (processed, total) => {
+                    await csvProcessor.MergeCsvFilesOptimizedAsync(tempFiles, finalFile, columnConfigs, (processed, total) => {
                         this.Invoke((Action)(() => {
                             progressBar.Value = Math.Min(progressBar.Maximum, processed);
                         }));
