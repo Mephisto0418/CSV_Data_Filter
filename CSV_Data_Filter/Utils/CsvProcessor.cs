@@ -144,16 +144,16 @@ namespace CSV_Data_Filter.Utils
                     return null;
                 }
                 
-                // 標題檢查已經確認包含所有需要的欄位，不需要二次檢查
-
-                // 建立臨時輸出檔案路徑
+                // 標題檢查已經確認包含所有需要的欄位，不需要二次檢查                // 建立臨時輸出檔案路徑
                 string outputPath = Path.Combine(tempDir, $"temp_{Path.GetFileNameWithoutExtension(filePath)}_{DateTime.Now.Ticks}.csv");
 
                 // 記錄處理進度
                 long totalProcessed = 0;
-                const int batchSize = 10000; // 每次處理10000行，避免記憶體問題
+                const int batchSize = 20000; // 增加批次處理大小到 20000 行以提升效能
 
-                using (var csvWriter = new CsvWriter(new StreamWriter(outputPath), new CsvConfiguration(CultureInfo.InvariantCulture)))
+                // 使用較大的緩衝區來提高寫入效率
+                const int bufferSize = 131072; // 128KB 緩衝區
+                using (var csvWriter = new CsvWriter(new StreamWriter(outputPath, false, System.Text.Encoding.UTF8, bufferSize), new CsvConfiguration(CultureInfo.InvariantCulture)))
                 {                // 寫入標頭行（使用原始欄位名稱，不使用自訂名稱）
                     foreach (var column in columnConfigs)
                     {
@@ -173,9 +173,8 @@ namespace CSV_Data_Filter.Utils
                     }
 
                     await csvWriter.NextRecordAsync();
-
                     // 讀取並處理數據
-                    using (var reader = new StreamReader(actualFilePath))
+                    using (var reader = new StreamReader(actualFilePath, System.Text.Encoding.UTF8, true, bufferSize))
                     {
                         // 分批讀取並處理
                         List<string> lines = new List<string>(batchSize);
@@ -213,15 +212,16 @@ namespace CSV_Data_Filter.Utils
                             if (lines.Count >= batchSize)
                             {
                                 await ProcessBatchAsync(lines, headerFields, columnConfigs, filterConditions,
-                                    addFileName, addDirectoryName, originalFilePath, csvWriter);                                totalProcessed += lines.Count;
+                                    addFileName, addDirectoryName, originalFilePath, csvWriter); totalProcessed += lines.Count;
                                 if (totalProcessed % 100000 == 0)
                                 {
-                                    _logAction($"處理 {Path.GetFileName(filePath)}: 已處理 {totalProcessed/1000}K 行");
-                                    // 這裡可以添加進度回調
-                                    // progressCallback?.Invoke(current, total);
-                                    
-                                    // 定期暫停，減少連續大量I/O操作
-                                    await Task.Delay(20); // 短暫暫停20毫秒
+                                    _logAction($"處理 {Path.GetFileName(filePath)}: 已處理 {totalProcessed / 1000}K 行");
+
+                                    // 定期暫停，減少連續大量I/O操作，並讓其他線程有機會執行
+                                    await Task.Delay(10); // 短暫暫停，僅需10毫秒
+
+                                    // 定期刷新緩衝區以減少記憶體用量
+                                    await csvWriter.FlushAsync();
                                 }
 
                                 lines.Clear();
@@ -493,7 +493,7 @@ namespace CSV_Data_Filter.Utils
                 return result;
 
             bool inQuotes = false;
-            var currentValue = new System.Text.StringBuilder();
+            var currentValue = GetStringBuilder(); // 從池中取出 StringBuilder
 
             for (int i = 0; i < line.Length; i++)
             {
@@ -517,6 +517,8 @@ namespace CSV_Data_Filter.Utils
                 {
                     // 欄位分隔符
                     result.Add(currentValue.ToString());
+                    ReturnStringBuilder(currentValue); // 歸還到池
+                    currentValue = GetStringBuilder(); // 取出新的
                     currentValue.Clear();
                 }
                 else if ((c == '\r' || c == '\n') && !inQuotes)
@@ -533,9 +535,9 @@ namespace CSV_Data_Filter.Utils
                     currentValue.Append(c);
                 }
             }
-
             // 添加最後一個欄位
             result.Add(currentValue.ToString());
+            ReturnStringBuilder(currentValue); // 歸還最後一個 StringBuilder 到池中
             
             // 檢查是否有空欄位需要修復
             for (int i = 0; i < result.Count; i++)
@@ -549,8 +551,9 @@ namespace CSV_Data_Filter.Utils
             }
 
             return result;
-        }
-
+        }        // 預緩存的條件值，避免頻繁轉換
+        private readonly ConcurrentDictionary<FilterCondition, decimal> _numericConditionCache = new ConcurrentDictionary<FilterCondition, decimal>();
+        
         /// <summary>
         /// 評估過濾條件
         /// </summary>
@@ -559,6 +562,24 @@ namespace CSV_Data_Filter.Utils
             var val = value?.Trim() ?? "";
             var condVal = condition.Value?.Trim() ?? "";
             var comparison = StringComparison.OrdinalIgnoreCase;
+
+            // 對於空值的特殊處理，可以提高效能
+            if (string.IsNullOrEmpty(val))
+            {
+                // 空值特殊處理，避免更多的檢查
+                switch (condition.Operator)
+                {
+                    case FilterOperator.Equals: return string.IsNullOrEmpty(condVal);
+                    case FilterOperator.NotEquals: return !string.IsNullOrEmpty(condVal);
+                    case FilterOperator.Contains: return false;
+                    case FilterOperator.NotContains: return true;
+                    case FilterOperator.StartsWith: return false;
+                    case FilterOperator.EndsWith: return false;
+                    case FilterOperator.GreaterThan: return false;
+                    case FilterOperator.LessThan: return false;
+                    default: return true;
+                }
+            }
 
             switch (condition.Operator)
             {
@@ -575,14 +596,40 @@ namespace CSV_Data_Filter.Utils
                 case FilterOperator.EndsWith:
                     return val.EndsWith(condVal, comparison);
                 case FilterOperator.GreaterThan:
-                    if (decimal.TryParse(val, out decimal decValue) &&
-                        decimal.TryParse(condVal, out decimal decCondition))
+                    // 使用緩存的數值條件，避免重複解析
+                    if (decimal.TryParse(val, out decimal decValue))
+                    {
+                        if (!_numericConditionCache.TryGetValue(condition, out decimal decCondition))
+                        {
+                            if (decimal.TryParse(condVal, out decCondition))
+                            {
+                                _numericConditionCache[condition] = decCondition;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
                         return decValue > decCondition;
+                    }
                     return false;
                 case FilterOperator.LessThan:
-                    if (decimal.TryParse(val, out decimal decValue2) &&
-                        decimal.TryParse(condVal, out decimal decCondition2))
+                    // 同樣使用緩存的數值條件
+                    if (decimal.TryParse(val, out decimal decValue2))
+                    {
+                        if (!_numericConditionCache.TryGetValue(condition, out decimal decCondition2))
+                        {
+                            if (decimal.TryParse(condVal, out decCondition2))
+                            {
+                                _numericConditionCache[condition] = decCondition2;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                        }
                         return decValue2 < decCondition2;
+                    }
                     return false;
                 default:
                     return true;
@@ -773,9 +820,8 @@ namespace CSV_Data_Filter.Utils
                 throw new ArgumentException("沒有要合併的文件");
 
             try
-            {
-                // 建立一個較大的緩衝區來提高I/O效率
-                const int bufferSize = 81920; // 80KB緩衝區
+            {                // 建立一個較大的緩衝區來提高I/O效率
+                const int bufferSize = 262144; // 增加到 256KB 緩衝區以提升 I/O 效率
                 using var outputWriter = new StreamWriter(outputPath, false, System.Text.Encoding.UTF8, bufferSize);
                 bool isFirstFile = true;
                 int processedCount = 0;
@@ -958,6 +1004,53 @@ namespace CSV_Data_Filter.Utils
             {
                 _logAction($"合併CSV文件時出錯: {ex.Message}");
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// 為了向後兼容而保留的方法，使用優化版的檔案合併
+        /// </summary>
+        /// <param name="tempFiles">要合併的臨時文件列表</param>
+        /// <param name="outputPath">輸出路徑</param>
+        /// <param name="columnConfigs">欄位配置列表（包含自訂名稱）</param>
+        /// <param name="progressCallback">進度回調函數</param>
+        /// <returns>輸出文件的路徑</returns>
+        public async Task<string?> MergeTemporaryFilesAsync(
+            List<string> tempFiles, 
+            string outputPath,
+            List<ColumnConfig>? columnConfigs = null, 
+            Action<int, int>? progressCallback = null)
+        {
+            // 呼叫優化版本
+            return await MergeCsvFilesOptimizedAsync(tempFiles, outputPath, columnConfigs, progressCallback);
+        }
+
+        /// <summary>
+        /// StringBuilder 緩存池，用於減少記憶體分配
+        /// </summary>
+        private ConcurrentQueue<StringBuilder> _stringBuilderPool = new ConcurrentQueue<StringBuilder>();
+
+        /// <summary>
+        /// 從池中獲取一個 StringBuilder
+        /// </summary>
+        private StringBuilder GetStringBuilder()
+        {
+            if (_stringBuilderPool.TryDequeue(out StringBuilder? sb))
+            {
+                sb.Clear();
+                return sb;
+            }
+            return new StringBuilder(256); // 預先分配適當大小
+        }
+
+        /// <summary>
+        /// 將 StringBuilder 歸還到池中
+        /// </summary>
+        private void ReturnStringBuilder(StringBuilder sb)
+        {
+            if (sb.Capacity <= 1024) // 只重用合理大小的 StringBuilder
+            {
+                _stringBuilderPool.Enqueue(sb);
             }
         }
     }
