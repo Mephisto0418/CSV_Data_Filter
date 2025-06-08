@@ -17,6 +17,7 @@
         private System.Windows.Forms.TextBox txtFolderInclude;
         private System.Windows.Forms.Label lblFolderExclude;
         private System.Windows.Forms.TextBox txtFolderExclude;
+        private System.Windows.Forms.Label lblFolderMultiCondition;
         private System.Windows.Forms.CheckBox chkFolderDate;
         private System.Windows.Forms.Label lblFolderDateFormat;
         private System.Windows.Forms.TextBox txtFolderDateFormat;
@@ -29,6 +30,7 @@
         private System.Windows.Forms.TextBox txtFileInclude;
         private System.Windows.Forms.Label lblFileExclude;
         private System.Windows.Forms.TextBox txtFileExclude;
+        private System.Windows.Forms.Label lblFileMultiCondition;
         private System.Windows.Forms.CheckBox chkFileDate;
         private System.Windows.Forms.Label lblFileDateFormat;
         private System.Windows.Forms.TextBox txtFileDateFormat;
@@ -70,6 +72,7 @@
         private System.Windows.Forms.CheckBox chkSkipIncompleteFiles;
         private System.Windows.Forms.CheckBox chkKeepTempFiles;
         private System.Windows.Forms.CheckBox chkDebugLog;
+        private System.Windows.Forms.ToolTip toolTip;
 
         /// <summary>
         ///  Clean up any resources being used.
@@ -101,6 +104,7 @@
             txtFolderInclude = new TextBox();
             lblFolderExclude = new Label();
             txtFolderExclude = new TextBox();
+            lblFolderMultiCondition = new Label();
             chkFolderDate = new CheckBox();
             lblFolderDateFormat = new Label();
             txtFolderDateFormat = new TextBox();
@@ -113,6 +117,7 @@
             txtFileInclude = new TextBox();
             lblFileExclude = new Label();
             txtFileExclude = new TextBox();
+            lblFileMultiCondition = new Label();
             chkFileDate = new CheckBox();
             lblFileDateFormat = new Label();
             txtFileDateFormat = new TextBox();
@@ -214,9 +219,10 @@
             gbFolderFilter.Controls.Add(cboFolderDateOp);
             gbFolderFilter.Controls.Add(lblFolderDateValue);
             gbFolderFilter.Controls.Add(dtpFolderDateValue);
+            gbFolderFilter.Controls.Add(lblFolderMultiCondition);
             gbFolderFilter.Location = new Point(10, 132);
             gbFolderFilter.Name = "gbFolderFilter";
-            gbFolderFilter.Size = new Size(580, 124);
+            gbFolderFilter.Size = new Size(580, 125);
             gbFolderFilter.TabIndex = 4;
             gbFolderFilter.TabStop = false;
             gbFolderFilter.Text = "資料夾篩選";
@@ -252,6 +258,16 @@
             txtFolderExclude.Name = "txtFolderExclude";
             txtFolderExclude.Size = new Size(200, 23);
             txtFolderExclude.TabIndex = 3;
+            // 
+            // lblFolderMultiCondition
+            // 
+            lblFolderMultiCondition.AutoSize = true;
+            lblFolderMultiCondition.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Italic, GraphicsUnit.Point);
+            lblFolderMultiCondition.Location = new Point(10, 91);
+            lblFolderMultiCondition.Name = "lblFolderMultiCondition";
+            lblFolderMultiCondition.Size = new Size(549, 13);
+            lblFolderMultiCondition.TabIndex = 11;
+            lblFolderMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。包含條件只要符合一個即視為符合。";
             // 
             // chkFolderDate
             // 
@@ -329,9 +345,10 @@
             gbFileFilter.Controls.Add(cboFileDateOp);
             gbFileFilter.Controls.Add(lblFileDateValue);
             gbFileFilter.Controls.Add(dtpFileDateValue);
+            gbFileFilter.Controls.Add(lblFileMultiCondition);
             gbFileFilter.Location = new Point(10, 265);
             gbFileFilter.Name = "gbFileFilter";
-            gbFileFilter.Size = new Size(580, 124);
+            gbFileFilter.Size = new Size(580, 125);
             gbFileFilter.TabIndex = 5;
             gbFileFilter.TabStop = false;
             gbFileFilter.Text = "檔案篩選";
@@ -367,6 +384,16 @@
             txtFileExclude.Name = "txtFileExclude";
             txtFileExclude.Size = new Size(200, 23);
             txtFileExclude.TabIndex = 3;
+            // 
+            // lblFileMultiCondition
+            // 
+            lblFileMultiCondition.AutoSize = true;
+            lblFileMultiCondition.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Italic, GraphicsUnit.Point);
+            lblFileMultiCondition.Location = new Point(10, 91);
+            lblFileMultiCondition.Name = "lblFileMultiCondition";
+            lblFileMultiCondition.Size = new Size(549, 13);
+            lblFileMultiCondition.TabIndex = 11;
+            lblFileMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。衝突檔案將被記錄到目標資料夾。";
             // 
             // chkFileDate
             // 
@@ -442,7 +469,7 @@
             gbColumns.Controls.Add(btnRemoveColumn);
             gbColumns.Controls.Add(btnConfigColumn);
             gbColumns.Controls.Add(chkDebugLog);
-            gbColumns.Location = new Point(10, 397);
+            gbColumns.Location = new Point(10, 398);
             gbColumns.Name = "gbColumns";
             gbColumns.Size = new Size(580, 168);
             gbColumns.TabIndex = 6;
@@ -817,6 +844,15 @@
             gbTarget.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
+
+            // 
+            // toolTip
+            // 
+            toolTip = new ToolTip();
+            toolTip.SetToolTip(txtFolderInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
+            toolTip.SetToolTip(txtFolderExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
+            toolTip.SetToolTip(txtFileInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
+            toolTip.SetToolTip(txtFileExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
         }
 
         #endregion

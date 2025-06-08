@@ -650,6 +650,7 @@ namespace CSV_Data_Filter
 
                 var matchingFiles = result.Files;
                 var networkPathMappings = result.NetworkPathMappings;
+                var conflictFiles = result.ConflictFiles;
 
                 // 將網路路徑映射傳遞給CSV處理器
                 if (networkPathMappings != null && networkPathMappings.Count > 0)
@@ -659,6 +660,48 @@ namespace CSV_Data_Filter
 
                 _totalFiles = matchingFiles.Count;
                 _processedFiles = 0;
+
+                // 檢查是否有衝突檔案
+                if (conflictFiles.Count > 0)
+                {
+                    SafeAddLog(lstLog, $"發現 {conflictFiles.Count} 個同時符合包含和排除條件的檔案");
+                    SafeAddLog(lstLog, "這些檔案將被記錄到一個單獨的衝突檔案清單中");
+                    
+                    // 生成衝突檔案的 CSV
+                    var conflictCsvPath = Path.Combine(_targetPath, "Conflict_Files.csv");
+                    try
+                    {
+                        using (var writer = new StreamWriter(conflictCsvPath, false, System.Text.Encoding.UTF8))
+                        {
+                            // 寫入標題列
+                            writer.WriteLine("檔案路徑,檔案名稱,資料夾路徑,大小(位元組),修改日期");
+                            
+                            // 寫入每個衝突檔案的資訊
+                            foreach (var file in conflictFiles)
+                            {
+                                try
+                                {
+                                    var fileInfo = new FileInfo(file);
+                                    var fileName = Path.GetFileName(file);
+                                    var dirPath = Path.GetDirectoryName(file) ?? string.Empty;
+                                    var fileSize = fileInfo.Exists ? fileInfo.Length.ToString() : "N/A";
+                                    var modifyDate = fileInfo.Exists ? fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
+                                    
+                                    writer.WriteLine($"\"{file}\",\"{fileName}\",\"{dirPath}\",{fileSize},\"{modifyDate}\"");
+                                }
+                                catch (Exception ex)
+                                {
+                                    SafeAddLog(lstLog, $"記錄衝突檔案 {file} 時出錯: {ex.Message}");
+                                }
+                            }
+                        }
+                        SafeAddLog(lstLog, $"衝突檔案清單已保存至: {conflictCsvPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        SafeAddLog(lstLog, $"建立衝突檔案清單時出錯: {ex.Message}");
+                    }
+                }
 
                 if (_totalFiles == 0)
                 {

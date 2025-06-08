@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Linq;
 
 namespace CSV_Data_Filter.Models
 {
@@ -18,16 +19,44 @@ namespace CSV_Data_Filter.Models
         public string OutputFileName { get; set; } = "";
         
         // 資料夾篩選
-        public string FolderInclude { get; set; } = "";
-        public string FolderExclude { get; set; } = "";
+        public List<string> FolderIncludes { get; set; } = new List<string>();
+        public List<string> FolderExcludes { get; set; } = new List<string>();
+        [JsonIgnore]
+        public string FolderInclude { 
+            get => string.Join(";", FolderIncludes); 
+            set { 
+                FolderIncludes = string.IsNullOrEmpty(value) ? new List<string>() : value.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList(); 
+            } 
+        }
+        [JsonIgnore]
+        public string FolderExclude { 
+            get => string.Join(";", FolderExcludes); 
+            set { 
+                FolderExcludes = string.IsNullOrEmpty(value) ? new List<string>() : value.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList(); 
+            } 
+        }
         public bool UseFolderDateFilter { get; set; } = false;
         public string FolderDateFormat { get; set; } = "yyyy-MM-dd";
         public string FolderDateOp { get; set; } = "";
         public DateTime FolderDateValue { get; set; } = DateTime.Now;
         
         // 檔案篩選
-        public string FileInclude { get; set; } = "";
-        public string FileExclude { get; set; } = "";
+        public List<string> FileIncludes { get; set; } = new List<string>();
+        public List<string> FileExcludes { get; set; } = new List<string>();
+        [JsonIgnore]
+        public string FileInclude { 
+            get => string.Join(";", FileIncludes); 
+            set { 
+                FileIncludes = string.IsNullOrEmpty(value) ? new List<string>() : value.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList(); 
+            } 
+        }
+        [JsonIgnore]
+        public string FileExclude { 
+            get => string.Join(";", FileExcludes); 
+            set { 
+                FileExcludes = string.IsNullOrEmpty(value) ? new List<string>() : value.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList(); 
+            } 
+        }
         public bool UseFileDateFilter { get; set; } = false;
         public string FileDateFormat { get; set; } = "yyyy-MM-dd";
         public string FileDateOp { get; set; } = "";

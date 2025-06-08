@@ -24,6 +24,11 @@ namespace CSV_Data_Filter.Utils
         /// 網路路徑到本地暫存路徑的映射字典
         /// </summary>
         public ConcurrentDictionary<string, string> NetworkPathMappings { get; set; } = new ConcurrentDictionary<string, string>();
+        
+        /// <summary>
+        /// 發生包含/排除條件衝突的檔案列表
+        /// </summary>
+        public List<string> ConflictFiles { get; set; } = new List<string>();
     }
     
     /// <summary>
@@ -67,7 +72,8 @@ namespace CSV_Data_Filter.Utils
             string fileDateFormat,
             string fileDateOp,
             DateTime fileDateValue,
-            string tempDir
+            string tempDir,
+            List<string> conflictFiles
         )
         {            // 使用高效能的深度優先搜尋非遞歸實作
             var dirs = new Stack<string>(1000); // 預先分配足夠大小的堆疊，避免頻繁重新分配
@@ -77,9 +83,15 @@ namespace CSV_Data_Filter.Utils
             // 使用較小的批次大小以避免記憶體問題
             const int batchSize = 500;
             
+            // 拆分條件為列表
+            var folderIncludes = string.IsNullOrEmpty(folderInclude) ? new List<string>() : folderInclude.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+            var folderExcludes = string.IsNullOrEmpty(folderExclude) ? new List<string>() : folderExclude.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+            var fileIncludes = string.IsNullOrEmpty(fileInclude) ? new List<string>() : fileInclude.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+            var fileExcludes = string.IsNullOrEmpty(fileExclude) ? new List<string>() : fileExclude.Split(';').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+            
             // 快取常用的目錄過濾條件
-            bool hasIncludeFilter = !string.IsNullOrEmpty(folderInclude);
-            bool hasExcludeFilter = !string.IsNullOrEmpty(folderExclude);
+            bool hasIncludeFilter = folderIncludes.Count > 0;
+            bool hasExcludeFilter = folderExcludes.Count > 0;
             
             while (dirs.Count > 0)
             {
@@ -103,13 +115,40 @@ namespace CSV_Data_Filter.Utils
                 }
                 
                 var dirName = Path.GetFileName(current);
-                  // 目錄篩選 - 只對最終的目錄名稱應用篩選條件，而不是整個路徑
+                // 目錄篩選 - 只對最終的目錄名稱應用篩選條件，而不是整個路徑
                 // 如果不符合包含條件或符合排除條件，仍然處理其子目錄，但跳過當前目錄的檔案
                 bool skipCurrentDirFiles = false;
-                if (hasIncludeFilter && !dirName.Contains(folderInclude))
-                    skipCurrentDirFiles = true;
-                if (hasExcludeFilter && dirName.Contains(folderExclude))
-                    skipCurrentDirFiles = true;
+                
+                // 判斷是否符合包含條件（任一條件符合即可）
+                if (hasIncludeFilter)
+                {
+                    bool includeMatch = false;
+                    foreach (var includePattern in folderIncludes)
+                    {
+                        if (!string.IsNullOrEmpty(includePattern) && dirName.Contains(includePattern))
+                        {
+                            includeMatch = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!includeMatch)
+                        skipCurrentDirFiles = true;
+                }
+                
+                // 判斷是否符合排除條件（任一條件符合即被排除）
+                if (hasExcludeFilter && !skipCurrentDirFiles)
+                {
+                    foreach (var excludePattern in folderExcludes)
+                    {
+                        if (!string.IsNullOrEmpty(excludePattern) && dirName.Contains(excludePattern))
+                        {
+                            skipCurrentDirFiles = true;
+                            break;
+                        }
+                    }
+                }
+                
                 if (useFolderDateFilter && !CompareDates(dirName, folderDateFormat, folderDateValue, folderDateOp))
                     skipCurrentDirFiles = true;
                 
@@ -135,9 +174,44 @@ namespace CSV_Data_Filter.Utils
                         if (_cancellationToken.IsCancellationRequested) yield break;
                         
                         var fileName = Path.GetFileName(file);
-                        // 檔案篩選
-                        if (!string.IsNullOrEmpty(fileInclude) && !fileName.Contains(fileInclude)) continue;
-                        if (!string.IsNullOrEmpty(fileExclude) && fileName.Contains(fileExclude)) continue;
+                        
+                        // 檔案篩選 - 多條件處理
+                        bool includeMatch = fileIncludes.Count == 0; // 如果沒有包含條件，預設為符合
+                        foreach (var includePattern in fileIncludes)
+                        {
+                            if (!string.IsNullOrEmpty(includePattern) && fileName.Contains(includePattern))
+                            {
+                                includeMatch = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!includeMatch) continue;
+                        
+                        // 檢查排除條件
+                        bool excludeMatch = false;
+                        foreach (var excludePattern in fileExcludes)
+                        {
+                            if (!string.IsNullOrEmpty(excludePattern) && fileName.Contains(excludePattern))
+                            {
+                                excludeMatch = true;
+                                break;
+                            }
+                        }
+                        
+                        // 檢查是否有衝突 (同時符合包含和排除條件)
+                        if (includeMatch && excludeMatch)
+                        {
+                            _logAction($"發現衝突檔案: {fileName} (同時符合包含和排除條件)");
+                            lock(conflictFiles)
+                            {
+                                conflictFiles.Add(file);
+                            }
+                            continue;
+                        }
+                        
+                        if (excludeMatch) continue;
+                        
                         if (useFileDateFilter && !CompareDates(fileName, fileDateFormat, fileDateValue, fileDateOp)) continue;
                         
                         yield return file; // 直接返回檔案，避免建立中間列表
@@ -363,6 +437,9 @@ namespace CSV_Data_Filter.Utils
             var totalPaths = filteredPaths.Count;
             int processedPaths = 0;
             
+            // 記錄有衝突的檔案（同時符合包含和排除條件的檔案）
+            var conflictFiles = new List<string>();
+            
             // 暫存目錄對應表，用於記錄網路路徑與本地暫存路徑的映射關係
             var networkPathMapping = new ConcurrentDictionary<string, string>();
             
@@ -394,34 +471,13 @@ namespace CSV_Data_Filter.Utils
                         _logAction($"檢測到網路路徑: {sourcePath}，先進行檔案搜尋，之後再決定是否需要複製");
                     }
 
-                    // 對任何路徑都使用原始路徑搜尋
-                    //foreach (var file in EnumerateCsvFiles(
-                    //    pathToSearch, 
-                    //    folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
-                    //    fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue,
-                    //    tempDir))
-                    //{
-                    //    if (_cancellationToken.IsCancellationRequested)
-                    //    {
-                    //        break;
-                    //    }
-
-                    //    // 記錄符合條件的檔案路徑
-                    //    matchedFiles.Add(file);
-                    //    fileCount++;
-
-                    //    // 每處理500個檔案輸出一次進度
-                    //    if (fileCount % 500 == 0)
-                    //    {
-                    //        _logAction($"在 {Path.GetFileName(pathToSearch)} 中已找到 {fileCount} 個符合條件的檔案");
-                    //    }
-                    //}
-
                     matchedFiles = EnumerateCsvFiles(
                         pathToSearch,
                         folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
                         fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue,
-                        tempDir).ToList();
+                        tempDir, conflictFiles).ToList();
+                    
+                    fileCount = matchedFiles.Count;
 
                     // 只有在是網路路徑且找到檔案時，才複製檔案到暫存目錄
                     if (isNetworkPath && matchedFiles.Count > 0)
@@ -474,9 +530,65 @@ namespace CSV_Data_Filter.Utils
                 }
             }
             
+            // 處理衝突檔案
+            if (conflictFiles.Count > 0)
+            {
+                _logAction($"發現 {conflictFiles.Count} 個同時符合包含和排除條件的檔案，將記錄到衝突檔案列表");
+                
+                // 複製網路路徑中的衝突檔案到本地暫存
+                var localConflictFiles = new List<string>();
+                foreach (var file in conflictFiles)
+                {
+                    string filePath = file;
+                    if (file.StartsWith("\\\\"))
+                    {
+                        string? parentNetworkPath = null;
+                        string parentLocalPath = string.Empty;
+                        
+                        // 尋找該檔案所屬的網路路徑映射
+                        foreach (var mapping in networkPathMapping)
+                        {
+                            if (file.StartsWith(mapping.Key))
+                            {
+                                parentNetworkPath = mapping.Key;
+                                parentLocalPath = mapping.Value;
+                                break;
+                            }
+                        }
+                        
+                        if (!string.IsNullOrEmpty(parentNetworkPath) && !string.IsNullOrEmpty(parentLocalPath))
+                        {
+                            // 計算檔案相對路徑
+                            string relativePath = file.Substring(parentNetworkPath.Length).TrimStart('\\', '/');
+                            string localFilePath = Path.Combine(parentLocalPath, relativePath);
+                            
+                            // 確保目標目錄存在
+                            string? targetDir = Path.GetDirectoryName(localFilePath);
+                            if (!string.IsNullOrEmpty(targetDir))
+                                Directory.CreateDirectory(targetDir);
+                                
+                            // 複製檔案到本地暫存
+                            try
+                            {
+                                File.Copy(file, localFilePath, true);
+                                filePath = localFilePath;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logAction($"複製衝突檔案 {file} 失敗: {ex.Message}");
+                            }
+                        }
+                    }
+                    
+                    localConflictFiles.Add(filePath);
+                }
+                
+                result.ConflictFiles = localConflictFiles;
+            }
+            
             // 計算搜尋時間
             var searchTime = DateTime.Now - startTime;
-            _logAction($"搜尋完成，總共找到 {finalResults.Count} 個符合條件的CSV檔案，搜尋時間: {searchTime.TotalSeconds:F1} 秒");
+            _logAction($"搜尋完成，總共找到 {finalResults.Count} 個符合條件的CSV檔案，{conflictFiles.Count} 個衝突檔案，搜尋時間: {searchTime.TotalSeconds:F1} 秒");
             
             // 填充結果
             result.Files = finalResults;
@@ -485,31 +597,6 @@ namespace CSV_Data_Filter.Utils
             return result;
         }
 
-        /// <summary>
-        /// 非同步查找CSV文件
-        /// </summary>
-        public Task<FindCsvFilesResult> FindCsvFilesAsync(
-            List<string> sourcePaths,
-            string folderInclude,
-            string folderExclude,
-            bool useFolderDateFilter,
-            string folderDateFormat,
-            string folderDateOp,
-            DateTime folderDateValue,
-            string fileInclude,
-            string fileExclude,
-            bool useFileDateFilter,
-            string fileDateFormat,
-            string fileDateOp,
-            DateTime fileDateValue,
-            string tempDir
-        )
-        {
-            return Task.Run(() => FindCsvFiles(
-                sourcePaths, folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
-                fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue, tempDir));
-        }
-        
         /// <summary>
         /// 過濾掉路徑列表中的子目錄，如果某個路徑是另一個路徑的子目錄，則將其排除
         /// 注意：此方法僅用於搜尋時跳過子目錄，不會從介面移除子目錄
@@ -561,6 +648,32 @@ namespace CSV_Data_Filter.Utils
             
             return result;
         }
+
+        /// <summary>
+        /// 非同步查找CSV文件
+        /// </summary>
+        public Task<FindCsvFilesResult> FindCsvFilesAsync(
+            List<string> sourcePaths,
+            string folderInclude,
+            string folderExclude,
+            bool useFolderDateFilter,
+            string folderDateFormat,
+            string folderDateOp,
+            DateTime folderDateValue,
+            string fileInclude,
+            string fileExclude,
+            bool useFileDateFilter,
+            string fileDateFormat,
+            string fileDateOp,
+            DateTime fileDateValue,
+            string tempDir
+        )
+        {
+            return Task.Run(() => FindCsvFiles(
+                sourcePaths, folderInclude, folderExclude, useFolderDateFilter, folderDateFormat, folderDateOp, folderDateValue,
+                fileInclude, fileExclude, useFileDateFilter, fileDateFormat, fileDateOp, fileDateValue, tempDir));
+        }
+        
         // 預編譯的正則表達式，避免重複創建提升性能
         private static readonly Regex DateRegex = new Regex(
             @"\d{4}[-/\.年]\d{1,2}[-/\.月]\d{1,2}日?|\d{1,2}[-/\.月]\d{1,2}[-/\.日]?\s*,?\s*\d{4}年?|\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4}|\d{4}\d{2}\d{2}",
