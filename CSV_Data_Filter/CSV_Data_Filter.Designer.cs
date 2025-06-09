@@ -95,6 +95,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            components = new System.ComponentModel.Container();
             lblSourcePaths = new Label();
             lstSourcePaths = new ListBox();
             btnAddPath = new Button();
@@ -104,7 +105,6 @@
             txtFolderInclude = new TextBox();
             lblFolderExclude = new Label();
             txtFolderExclude = new TextBox();
-            lblFolderMultiCondition = new Label();
             chkFolderDate = new CheckBox();
             lblFolderDateFormat = new Label();
             txtFolderDateFormat = new TextBox();
@@ -112,12 +112,12 @@
             cboFolderDateOp = new ComboBox();
             lblFolderDateValue = new Label();
             dtpFolderDateValue = new DateTimePicker();
+            lblFolderMultiCondition = new Label();
             gbFileFilter = new GroupBox();
             lblFileInclude = new Label();
             txtFileInclude = new TextBox();
             lblFileExclude = new Label();
             txtFileExclude = new TextBox();
-            lblFileMultiCondition = new Label();
             chkFileDate = new CheckBox();
             lblFileDateFormat = new Label();
             txtFileDateFormat = new TextBox();
@@ -125,6 +125,7 @@
             cboFileDateOp = new ComboBox();
             lblFileDateValue = new Label();
             dtpFileDateValue = new DateTimePicker();
+            lblFileMultiCondition = new Label();
             gbColumns = new GroupBox();
             lblAvailColumns = new Label();
             lstAvailColumns = new ListBox();
@@ -159,6 +160,7 @@
             btnLoadConfig = new Button();
             btnSaveConfig = new Button();
             lblCurrentConfig = new Label();
+            toolTip = new ToolTip(components);
             gbFolderFilter.SuspendLayout();
             gbFileFilter.SuspendLayout();
             gbColumns.SuspendLayout();
@@ -242,6 +244,7 @@
             txtFolderInclude.Name = "txtFolderInclude";
             txtFolderInclude.Size = new Size(200, 23);
             txtFolderInclude.TabIndex = 1;
+            toolTip.SetToolTip(txtFolderInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
             // 
             // lblFolderExclude
             // 
@@ -258,16 +261,7 @@
             txtFolderExclude.Name = "txtFolderExclude";
             txtFolderExclude.Size = new Size(200, 23);
             txtFolderExclude.TabIndex = 3;
-            // 
-            // lblFolderMultiCondition
-            // 
-            lblFolderMultiCondition.AutoSize = true;
-            lblFolderMultiCondition.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Italic, GraphicsUnit.Point);
-            lblFolderMultiCondition.Location = new Point(10, 91);
-            lblFolderMultiCondition.Name = "lblFolderMultiCondition";
-            lblFolderMultiCondition.Size = new Size(549, 13);
-            lblFolderMultiCondition.TabIndex = 11;
-            lblFolderMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。包含條件只要符合一個即視為符合。";
+            toolTip.SetToolTip(txtFolderExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
             // 
             // chkFolderDate
             // 
@@ -332,6 +326,16 @@
             dtpFolderDateValue.Size = new Size(150, 23);
             dtpFolderDateValue.TabIndex = 10;
             // 
+            // lblFolderMultiCondition
+            // 
+            lblFolderMultiCondition.AutoSize = true;
+            lblFolderMultiCondition.Font = new Font("微軟正黑體", 8.25F, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Point, 136);
+            lblFolderMultiCondition.Location = new Point(10, 91);
+            lblFolderMultiCondition.Name = "lblFolderMultiCondition";
+            lblFolderMultiCondition.Size = new Size(551, 15);
+            lblFolderMultiCondition.TabIndex = 11;
+            lblFolderMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。包含條件只要符合一個即視為符合。";
+            // 
             // gbFileFilter
             // 
             gbFileFilter.Controls.Add(lblFileInclude);
@@ -368,6 +372,7 @@
             txtFileInclude.Name = "txtFileInclude";
             txtFileInclude.Size = new Size(200, 23);
             txtFileInclude.TabIndex = 1;
+            toolTip.SetToolTip(txtFileInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
             // 
             // lblFileExclude
             // 
@@ -384,16 +389,7 @@
             txtFileExclude.Name = "txtFileExclude";
             txtFileExclude.Size = new Size(200, 23);
             txtFileExclude.TabIndex = 3;
-            // 
-            // lblFileMultiCondition
-            // 
-            lblFileMultiCondition.AutoSize = true;
-            lblFileMultiCondition.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Italic, GraphicsUnit.Point);
-            lblFileMultiCondition.Location = new Point(10, 91);
-            lblFileMultiCondition.Name = "lblFileMultiCondition";
-            lblFileMultiCondition.Size = new Size(549, 13);
-            lblFileMultiCondition.TabIndex = 11;
-            lblFileMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。衝突檔案將被記錄到目標資料夾。";
+            toolTip.SetToolTip(txtFileExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
             // 
             // chkFileDate
             // 
@@ -457,6 +453,16 @@
             dtpFileDateValue.Name = "dtpFileDateValue";
             dtpFileDateValue.Size = new Size(150, 23);
             dtpFileDateValue.TabIndex = 10;
+            // 
+            // lblFileMultiCondition
+            // 
+            lblFileMultiCondition.AutoSize = true;
+            lblFileMultiCondition.Font = new Font("微軟正黑體", 8.25F, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Point, 0);
+            lblFileMultiCondition.Location = new Point(10, 91);
+            lblFileMultiCondition.Name = "lblFileMultiCondition";
+            lblFileMultiCondition.Size = new Size(540, 15);
+            lblFileMultiCondition.TabIndex = 11;
+            lblFileMultiCondition.Text = "提示：要設定多個條件，請使用分號(;)分隔，例如「條件1;條件2;條件3」。衝突檔案將被記錄到目標資料夾。";
             // 
             // gbColumns
             // 
@@ -844,15 +850,6 @@
             gbTarget.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
-
-            // 
-            // toolTip
-            // 
-            toolTip = new ToolTip();
-            toolTip.SetToolTip(txtFolderInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
-            toolTip.SetToolTip(txtFolderExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
-            toolTip.SetToolTip(txtFileInclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
-            toolTip.SetToolTip(txtFileExclude, "使用分號(;)分隔多個條件，如：條件1;條件2;條件3");
         }
 
         #endregion

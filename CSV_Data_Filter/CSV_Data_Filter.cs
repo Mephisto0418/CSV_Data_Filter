@@ -335,55 +335,6 @@ namespace CSV_Data_Filter
             }
         }
 
-        /// <summary>
-        /// 遞迴尋找第一個符合條件的CSV檔案（副檔名.csv，可擴充為名稱包含/排除等）
-        /// </summary>
-        private string? FindFirstCsvFile(string dir)
-        {
-            try
-            {
-                if (EnableDebugLog)
-                {
-                    AddLog(lstLog, $"[Debug] 搜尋目錄: {dir}");
-                }
-
-                // 先檢查當前目錄中的文件
-                var files = Directory.GetFiles(dir, "*.csv", SearchOption.TopDirectoryOnly);
-                if (files.Length > 0)
-                {
-                    if (EnableDebugLog)
-                    {
-                        AddLog(lstLog, $"[Debug] 在 {dir} 中找到 {files.Length} 個CSV檔案，返回第一個: {Path.GetFileName(files[0])}");
-                    }
-                    return files[0];
-                }
-
-                // 如果當前目錄沒有符合條件的文件，則檢查所有子目錄
-                var subDirs = Directory.GetDirectories(dir);
-                if (EnableDebugLog && subDirs.Length > 0)
-                {
-                    AddLog(lstLog, $"[Debug] 目錄 {dir} 沒有找到CSV檔案，將搜尋 {subDirs.Length} 個子目錄");
-                }
-
-                foreach (var sub in subDirs)
-                {
-                    var found = FindFirstCsvFile(sub);
-                    if (found != null)
-                    {
-                        return found;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                if (EnableDebugLog)
-                {
-                    AddLog(lstLog, $"[Debug] 搜尋目錄 {dir} 時出錯: {ex.Message}");
-                }
-            }
-            return null;
-        }
-
         private void AddSelectedColumn(ListBox availColumnsListBox, ListBox selectedColumnsListBox)
         {
             if (availColumnsListBox.SelectedIndex != -1)
