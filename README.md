@@ -46,7 +46,7 @@ CSV資料過濾與合併工具 - 一個功能強大的Windows桌面應用程式�
 
 ### 方法二：從原始碼編譯
 ```bash
-git clone https://github.com/[your-username]/CSV_Data_Filter.git
+git clone https://github.com/Mephisto0418/CSV_Data_Filter.git
 cd CSV_Data_Filter/CSV_Data_Filter
 dotnet build --configuration Release
 ```
@@ -153,7 +153,7 @@ dotnet build --configuration Release
 
 ## 📝 更新日誌
 
-### v1.0.6 (2025-06-25)
+### v1.0.6 (2025-06-08)
 - 新增：資料夾和檔案篩選支援多條件設定功能，使用分號(;)分隔多個條件
 - 新增：包含條件只要符合一個即視為符合，排除條件只要符合一個即被排除
 - 新增：衝突檔案識別功能，自動偵測同時符合包含和排除條件的檔案
@@ -161,7 +161,7 @@ dotnet build --configuration Release
 - 優化：UI界面調整，新增多條件輸入的提示說明
 - 優化：工具提示功能，在包含和排除條件文字框上提供輸入格式提示
 
-### v1.0.5 (2025-06-15)
+### v1.0.5 (2025-06-06)
 - 新增：網路路徑處理優化，將NAS等網路目錄檔案自動複製到本地暫存後處理，大幅提升處理效能
 - 新增：自動識別網路路徑並進行優化處理，無需額外設定
 - 新增：網路路徑與本地暫存路徑的智慧映射，確保原始檔案路徑資訊正確保留
